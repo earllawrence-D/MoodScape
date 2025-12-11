@@ -1,0 +1,51 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/* Custom styles */
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+:root {
+  --calm-bg: #f4f7fb;
+  --calm-blue: #5c7cfa;
+  --calm-blue-light: #e3e9ff;
+}
+
+body {
+  background: var(--calm-bg) !important;
+}
+
+.card {
+  background: white;
+  border-radius: 18px;
+  border: 1px solid #e8ecf5;
+}
+
+input, .btn-primary {
+  border-radius: 12px !important;
+}
+
+.btn-primary {
+  background: var(--calm-blue);
+}
+
+.btn-primary:hover {
+  background: #4764d8;
+}
+    
+        .animate-pulse-ai {
+          animation: pulseAI 1.2s infinite ease-in-out;
+        }
+        @keyframes pulseAI {
+          0% { transform: scale(1); opacity: 0.85; box-shadow: 0 0 0 0 rgba(99,102,241, 0.6); }
+          50% { transform: scale(1.08); opacity: 1; box-shadow: 0 0 0 12px rgba(99,102,241, 0); }
+          100% { transform: scale(1); opacity: 0.85; box-shadow: 0 0 0 0 rgba(99,102,241, 0); }
+        }
+.bar {
+  width: 3px;
+  background-color: white;
+  transform-origin: center; /* grow from center */
+  transition: transform 0.1s ease-out;
+}
+    
