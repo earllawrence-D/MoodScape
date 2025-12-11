@@ -21,8 +21,6 @@ import feedbackRoutes from "./routes/feedbackRoutes.js"; // <-- make sure path i
 import "./models/Feedback.js"; // add this along with other models
 
 
-
-
 // Models
 import "./models/User.js";
 import "./models/CommunityPost.js";
@@ -41,6 +39,7 @@ const __dirname = path.dirname(__filename);
 // ===============================
 // STATIC FILES
 // ===============================
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
 // Serve avatar uploads
 app.use(
@@ -102,7 +101,9 @@ app.use('/api/feedback', feedbackRoutes);
 // ===============================
 // HEALTH CHECK
 // ===============================
-
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+});
 app.get("/health", (req, res) => {
   res.json({
     success: true,
