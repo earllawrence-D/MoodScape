@@ -39,7 +39,7 @@ const __dirname = path.dirname(__filename);
 // ===============================
 // STATIC FILES
 // ===============================
-app.use(express.static(path.join(__dirname, "../frontend/dist")));
+app.use(express.static(path.join(__dirname, "../../frontend/dist")));
 
 // Serve avatar uploads
 app.use(
@@ -102,8 +102,10 @@ app.use('/api/feedback', feedbackRoutes);
 // HEALTH CHECK
 // ===============================
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"));
 });
+
+
 app.get("/health", (req, res) => {
   res.json({
     success: true,
