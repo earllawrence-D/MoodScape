@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useContext } from "react";
-import { api, journalAPI, harmfulWordAPI } from "../utils/api";
+import api, { journalAPI, harmfulWordAPI } from "../utils/api";
 import Navbar from "../components/Navbar";
 import { Send, X } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { AuthContext } from "../context/AuthContext";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 // FIX: Register Chart.js scales
