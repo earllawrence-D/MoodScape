@@ -18,6 +18,7 @@ import moodRoutes from "./routes/moodRoutes.js";
 import userRoutes from "./routes/user.js";
 import adminRoutes from "./routes/admin.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
+import harmfulWordRoutes from "./routes/harmfulWords.js";
 
 // Models
 import "./models/User.js";
@@ -100,6 +101,8 @@ app.use("/api/community", communityRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/harmful-words", harmfulWordRoutes);
+
 
 // ===============================
 // HEALTHCHECK & SPA FALLBACK
