@@ -2,7 +2,6 @@ import Journal from "../models/Journal.js";
 import { getAIResponse } from "../services/aiService.js";
 import { findHarmfulWords } from "../helpers/harmful.js";
 import { generateAIResponse } from "../helpers/ai-utils.js";
-import User from "../models/User.js";
 import HarmfulWordLog from "../models/HarmfulWordLog.js";
 
 // ------------------------------------------------------
@@ -21,7 +20,13 @@ export const getJournals = async (req, res) => {
       limit,
     });
 
-    res.json({ success: true, data: journals });
+    // Ensure harmfulWords is always an array
+    const sanitized = journals.map((j) => ({
+      ...j.get({ plain: true }),
+      harmfulWords: Array.isArray(j.harmfulWords) ? j.harmfulWords : [],
+    }));
+
+    res.json({ success: true, data: sanitized });
   } catch (err) {
     console.error("Get journals failed:", err);
     res.status(500).json({
@@ -33,7 +38,7 @@ export const getJournals = async (req, res) => {
 };
 
 // ------------------------------------------------------
-// CREATE JOURNAL (CLEAN VERSION - NO THERAPIST LOGIC)
+// CREATE JOURNAL
 // ------------------------------------------------------
 export const createJournal = async (req, res) => {
   try {
@@ -64,7 +69,7 @@ export const createJournal = async (req, res) => {
     }
 
     // ----------------------------------------
-    // 3️⃣ If harmful: generate safe-response version
+    // 3️⃣ Generate safe AI response if harmful
     // ----------------------------------------
     const finalAIResponse = generateAIResponse(
       harmfulDetected,
@@ -80,16 +85,14 @@ export const createJournal = async (req, res) => {
       isVoice: !!is_voice,
       mood: aiResult?.mood || "neutral",
       moodScore: aiResult?.moodScore ?? 5,
-      aiReport:
-        aiResult?.aiReport || "Keep journaling to track your emotions!",
+      aiReport: aiResult?.aiReport || "Keep journaling to track your emotions!",
       aiResponse: finalAIResponse,
-
       containsHarmful: harmfulDetected,
-      harmfulWords: harmfulDetected ? harmfulWords.join(",") : null,
+      harmfulWords: harmfulDetected ? harmfulWords : [], // store as array
     });
 
     // ----------------------------------------
-    // 5️⃣ Log Harmful Words (if any)
+    // 5️⃣ Log Harmful Words
     // ----------------------------------------
     if (harmfulDetected) {
       for (const word of harmfulWords) {
@@ -103,7 +106,7 @@ export const createJournal = async (req, res) => {
     }
 
     // ----------------------------------------
-    // 6️⃣ Return (Therapist Logic Removed)
+    // 6️⃣ Return response
     // ----------------------------------------
     return res.status(201).json({
       success: true,
