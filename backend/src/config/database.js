@@ -1,24 +1,14 @@
 import { Sequelize } from "sequelize";
+import mysql2 from "mysql2/promise"; // Use the promise API explicitly (pure JS)
 
-// Use the full Railway MySQL URL
-const DATABASE_URL =
-  process.env.DATABASE_URL ||
-  "mysql://root:yOmWwLqjSXpEHfWzDaKcUOslfQgYXAEi@mysql.railway.internal:3306/railway";
+const DATABASE_URL = process.env.DATABASE_URL;
 
-// Detect production
-const isProduction = process.env.NODE_ENV === "production";
-
-// Initialize Sequelize
 const sequelize = new Sequelize(DATABASE_URL, {
   dialect: "mysql",
+  dialectModule: mysql2, // <-- forces pure JS (avoids native binaries)
   logging: false,
-  dialectOptions: isProduction
-    ? {
-        ssl: {
-          require: true,
-          rejectUnauthorized: false,
-        },
-      }
+  dialectOptions: process.env.NODE_ENV === "production"
+    ? { ssl: { require: true, rejectUnauthorized: false } }
     : {},
 });
 
