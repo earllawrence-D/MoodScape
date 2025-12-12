@@ -21,9 +21,12 @@ export const testConnection = async () => {
   try {
     await sequelize.authenticate();
     console.log("✅ Connected to MySQL successfully!");
+    return true;
   } catch (error) {
     console.error("❌ Database connection failed:", error.message);
+    return false;
   }
 };
+
 
 export default sequelize;
