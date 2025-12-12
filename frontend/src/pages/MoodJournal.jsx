@@ -6,7 +6,7 @@ import { Line } from "react-chartjs-2";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
-// FIX: Register Chart.js scales
+// Chart.js registration
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,9 +26,10 @@ ChartJS.register(
   Legend
 );
 
+// Helper to analyze mood via API
 const analyzeMood = async (text) => {
   const res = await api.post("/mood/analyze", { text });
-  return res.data;
+  return res.data || { moodLabel: "neutral", score: 5, summary: "" };
 };
 
 const MoodJournal = () => {
@@ -42,6 +43,7 @@ const MoodJournal = () => {
 
   const journalsRef = useRef([]);
 
+  // Fetch journal entries on mount
   useEffect(() => {
     fetchJournals();
   }, []);
@@ -49,10 +51,10 @@ const MoodJournal = () => {
   const fetchJournals = async () => {
     try {
       const res = await journalAPI.getAll({ limit: 200 });
-      const entries = res.data.data || [];
+      const entries = res.data?.data || [];
 
-      entries.forEach((e) => {
-        if (!Array.isArray(e.harmfulWords)) e.harmfulWords = [];
+      entries.forEach((entry) => {
+        if (!Array.isArray(entry.harmfulWords)) entry.harmfulWords = [];
       });
 
       setJournals(entries);
@@ -66,48 +68,52 @@ const MoodJournal = () => {
     if (!content.trim()) return;
     setLoading(true);
 
+    // Temporary entry for instant UI feedback
+    const tempEntry = {
+      id: "temp-" + Date.now(),
+      content,
+      harmfulWords: [],
+      mood: "neutral",
+      moodScore: 5,
+      aiResponse: "Analyzing...",
+      createdAt: new Date().toISOString(),
+    };
+
+    journalsRef.current = [tempEntry, ...journalsRef.current];
+    setJournals([...journalsRef.current]);
+
     try {
-      const tempEntry = {
-        id: "temp-" + Date.now(),
-        content,
-        harmfulWords: [],
-        mood: "neutral",
-        moodScore: 5,
-        aiResponse: "Analyzing...",
-        createdAt: new Date().toISOString(),
-      };
-
-      journalsRef.current = [tempEntry, ...journalsRef.current];
-      setJournals([...journalsRef.current]);
-
-      // Harmful word detection
+      // Detect harmful words
       let harmfulWords = [];
       try {
         const hw = await harmfulWordAPI.check({ content });
-        harmfulWords = hw.data.words || [];
+        harmfulWords = hw.data?.words || [];
 
         if (harmfulWords.length > 0) {
-          for (const word of harmfulWords) {
-            await journalAPI.logHarmfulWord({
-              word,
-              context: content,
-              userId: user?.id,
-            });
-          }
+          await Promise.all(
+            harmfulWords.map((word) =>
+              journalAPI.logHarmfulWord({
+                word,
+                context: content,
+                userId: user?.id,
+              })
+            )
+          );
         }
       } catch (e) {
         console.warn("Harmful detection failed:", e);
       }
 
-      // GPT Mood Analyzer
+      // Analyze mood
       let moodResult = { moodLabel: "neutral", score: 5, summary: "" };
       try {
         moodResult = await analyzeMood(content);
       } catch (e) {
-        console.warn(e);
+        console.warn("Mood analysis failed:", e);
       }
 
-      const save = await journalAPI.create({
+      // Save journal entry
+      const saveRes = await journalAPI.create({
         content,
         harmfulWords,
         mood: moodResult.moodLabel,
@@ -115,7 +121,7 @@ const MoodJournal = () => {
         aiResponse: moodResult.summary,
       });
 
-      const saved = save.data.data;
+      const saved = saveRes.data?.data || {};
       if (!Array.isArray(saved.harmfulWords)) saved.harmfulWords = [];
 
       journalsRef.current = [
@@ -126,17 +132,16 @@ const MoodJournal = () => {
       setJournals([...journalsRef.current]);
       setContent("");
     } catch (err) {
-      console.error(err);
-      alert("Error saving journal");
+      console.error("Save Journal Error:", err);
+      alert("Error saving journal entry.");
     }
 
     setLoading(false);
   };
 
-  const filtered = journalsRef.current;
-
+  // Chart data
   const chartData = {
-    labels: filtered.map((j) =>
+    labels: journalsRef.current.map((j) =>
       new Date(j.createdAt).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -145,7 +150,7 @@ const MoodJournal = () => {
     datasets: [
       {
         label: "Mood Score",
-        data: filtered.map((j) => j.moodScore || 5),
+        data: journalsRef.current.map((j) => j.moodScore ?? 5),
         borderColor: "#4f46e5",
         backgroundColor: "rgba(79,70,229,0.3)",
         tension: 0.4,
@@ -158,6 +163,7 @@ const MoodJournal = () => {
       <Navbar />
 
       <div className="w-full max-w-3xl p-6 flex flex-col gap-6">
+        {/* Journal Input */}
         <div className="bg-white rounded-xl p-6 border-2 border-teal-400 shadow-md flex flex-col">
           <textarea
             value={content}
@@ -167,7 +173,6 @@ const MoodJournal = () => {
             rows={4}
             disabled={loading}
           />
-
           <div className="flex justify-between items-center">
             <button
               onClick={handleSubmit}
@@ -179,6 +184,7 @@ const MoodJournal = () => {
           </div>
         </div>
 
+        {/* Journal Entries */}
         <div className="bg-white rounded-xl p-4 border-2 border-teal-400 shadow-md flex flex-col">
           <div className="flex justify-between items-center mb-3">
             <h2 className="font-bold text-lg">Entries</h2>
@@ -191,11 +197,14 @@ const MoodJournal = () => {
           </div>
 
           <div className="max-h-80 overflow-y-auto space-y-3">
-            {filtered.length === 0 ? (
+            {journalsRef.current.length === 0 ? (
               <p className="text-gray-500">No entries yet.</p>
             ) : (
-              filtered.map((e) => (
-                <div key={e.id} className="p-3 border rounded-lg shadow-sm bg-gray-50">
+              journalsRef.current.map((e) => (
+                <div
+                  key={e.id}
+                  className="p-3 border rounded-lg shadow-sm bg-gray-50"
+                >
                   <p className="text-gray-800">{e.content}</p>
                   {e.aiResponse && (
                     <p className="text-sm text-gray-500 mt-1">{e.aiResponse}</p>
@@ -212,6 +221,7 @@ const MoodJournal = () => {
         </div>
       </div>
 
+      {/* Mood Graph Modal */}
       {showGraph && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-3xl shadow-xl relative">
@@ -223,9 +233,12 @@ const MoodJournal = () => {
             </button>
 
             <h2 className="font-bold text-xl mb-4">Mood Trend Graph</h2>
-
             <div className="w-full h-96">
-              <Line data={chartData} options={{ maintainAspectRatio: false }} redraw />
+              <Line
+                data={chartData}
+                options={{ maintainAspectRatio: false }}
+                redraw
+              />
             </div>
           </div>
         </div>

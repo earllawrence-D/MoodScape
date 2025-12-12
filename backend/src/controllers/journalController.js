@@ -1,124 +1,72 @@
-import Journal from "../models/Journal.js";
-import { getAIResponse } from "../services/aiService.js";
-import { findHarmfulWords } from "../helpers/harmful.js";
-import { generateAIResponse } from "../helpers/ai-utils.js";
-import HarmfulWordLog from "../models/HarmfulWordLog.js";
+// src/controllers/journalController.js
+import JournalEntry from "../models/journal_entries.js"; // your model
+import HarmfulWordLog from "../models/harmful_word_log.js"; // your harmful word log model
+import { Op } from "sequelize";
 
-// ------------------------------------------------------
-// GET JOURNALS
-// ------------------------------------------------------
-export const getJournals = async (req, res) => {
-  try {
-    if (!req.user?.id)
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-
-    const limit = parseInt(req.query.limit) || 10;
-
-    const journals = await Journal.findAll({
-      where: { userId: req.user.id },
-      order: [["createdAt", "DESC"]],
-      limit,
-    });
-
-    // Ensure harmfulWords is always an array
-    const sanitized = journals.map((j) => ({
-      ...j.get({ plain: true }),
-      harmfulWords: Array.isArray(j.harmfulWords) ? j.harmfulWords : [],
-    }));
-
-    res.json({ success: true, data: sanitized });
-  } catch (err) {
-    console.error("Get journals failed:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to get journals",
-      error: err.message,
-    });
-  }
-};
-
-// ------------------------------------------------------
-// CREATE JOURNAL
-// ------------------------------------------------------
+// Create a new journal entry
 export const createJournal = async (req, res) => {
   try {
-    if (!req.user?.id)
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+    const { user_id, content, mood, mood_score, is_voice, harmful_words } = req.body;
 
-    const { content, is_voice } = req.body;
-
-    if (!content || content.trim() === "")
-      return res
-        .status(400)
-        .json({ success: false, message: "Content is required" });
-
-    // ----------------------------------------
-    // 1️⃣ Detect Harmful Words
-    // ----------------------------------------
-    const harmfulWords = findHarmfulWords(content);
-    const harmfulDetected = harmfulWords.length > 0;
-
-    // ----------------------------------------
-    // 2️⃣ AI Analysis
-    // ----------------------------------------
-    let aiResult = {};
-    try {
-      aiResult = await getAIResponse(content);
-    } catch (error) {
-      console.error("AI error:", error);
+    // Validate required fields
+    if (!user_id || !content) {
+      return res.status(400).json({ message: "User ID and content are required." });
     }
 
-    // ----------------------------------------
-    // 3️⃣ Generate safe AI response if harmful
-    // ----------------------------------------
-    const finalAIResponse = generateAIResponse(
-      harmfulDetected,
-      aiResult?.aiResponse || ""
-    );
+    // Validate mood_score (1-10)
+    let validMoodScore = parseInt(mood_score);
+    if (isNaN(validMoodScore) || validMoodScore < 1 || validMoodScore > 10) {
+      validMoodScore = 5; // default neutral
+    }
 
-    // ----------------------------------------
-    // 4️⃣ Create Journal Entry
-    // ----------------------------------------
-    const journal = await Journal.create({
-      userId: req.user.id,
-      content,
-      isVoice: !!is_voice,
-      mood: aiResult?.mood || "neutral",
-      moodScore: aiResult?.moodScore ?? 5,
-      aiReport: aiResult?.aiReport || "Keep journaling to track your emotions!",
-      aiResponse: finalAIResponse,
-      containsHarmful: harmfulDetected,
-      harmfulWords: harmfulDetected ? harmfulWords : [], // store as array
-    });
-
-    // ----------------------------------------
-    // 5️⃣ Log Harmful Words
-    // ----------------------------------------
-    if (harmfulDetected) {
-      for (const word of harmfulWords) {
-        await HarmfulWordLog.create({
-          userId: req.user.id,
-          journalEntryId: journal.id,
-          word,
-          context: content.substring(0, 300),
-        });
+    // Ensure harmful_words is a JSON string for DB storage
+    let harmfulWordsArray = [];
+    if (Array.isArray(harmful_words)) {
+      harmfulWordsArray = harmful_words;
+    } else if (typeof harmful_words === "string") {
+      try {
+        harmfulWordsArray = JSON.parse(harmful_words);
+      } catch (err) {
+        harmfulWordsArray = [harmful_words]; // treat as single word
       }
     }
 
-    // ----------------------------------------
-    // 6️⃣ Return response
-    // ----------------------------------------
-    return res.status(201).json({
-      success: true,
-      data: journal.get({ plain: true }),
-      harmful_detected: harmfulDetected,
+    const harmfulWordsStr = harmfulWordsArray.length ? JSON.stringify(harmfulWordsArray) : null;
+
+    // Generate AI response (mock example)
+    const ai_response = JSON.stringify({
+      mood: mood || "neutral",
+      moodScore: validMoodScore,
+      aiResponse: `Keep journaling to track your emotions!`
     });
-  } catch (error) {
-    console.error("Journal creation failed:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create journal entry",
-      error: error.message,
+
+    // Create journal entry
+    const journal = await JournalEntry.create({
+      user_id,
+      content,
+      mood: mood || "neutral",
+      mood_score: validMoodScore,
+      is_voice: is_voice || 0,
+      ai_response,
+      harmful_words: harmfulWordsStr,
+      contains_harmful: harmfulWordsArray.length > 0 ? 1 : 0
     });
+
+    // Insert into harmful_word_log if applicable
+    if (harmfulWordsArray.length) {
+      const logEntries = harmfulWordsArray.map(word => ({
+        journal_entry_id: journal.id,
+        user_id,
+        word,
+        created_at: new Date(),
+        updated_at: new Date()
+      }));
+      await HarmfulWordLog.bulkCreate(logEntries);
+    }
+
+    return res.status(201).json({ message: "Journal created successfully", journal });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
