@@ -16,16 +16,15 @@ import aiRoutes from "./routes/ai.js";
 import communityRoutes from "./routes/community.js";
 import moodRoutes from "./routes/moodRoutes.js";
 import userRoutes from "./routes/user.js";
-import adminRoutes from './routes/admin.js';
-import feedbackRoutes from "./routes/feedbackRoutes.js"; // <-- make sure path is correct
-import "./models/Feedback.js"; // add this along with other models
-
+import adminRoutes from "./routes/admin.js";
+import feedbackRoutes from "./routes/feedbackRoutes.js";
 
 // Models
 import "./models/User.js";
 import "./models/CommunityPost.js";
 import "./models/CommunityComment.js";
 import "./models/CommunityVote.js";
+import "./models/Feedback.js";
 
 dotenv.config();
 
@@ -37,23 +36,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ===============================
-// STATIC FILES
+// MIDDLEWARES
 // ===============================
+
+// Serve static files
 app.use(express.static(path.join(__dirname, "../../frontend/dist")));
 
-// Serve avatar uploads
-app.use(
-  "/uploads/avatars",
-  express.static(path.join(__dirname, "uploads/avatars"))
-);
-
-// Serve all uploaded files
+// Serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ===============================
-// SECURITY MIDDLEWARES
-// ===============================
-
+// Security
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -73,8 +65,6 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:5173",
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -82,6 +72,7 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// Custom middlewares
 app.use(sanitizeInput);
 app.use(generalLimiter);
 
@@ -95,16 +86,12 @@ app.use("/api/journals", journalRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/community", communityRoutes);
 app.use("/api/user", userRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/feedback', feedbackRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 // ===============================
-// HEALTH CHECK
+// HEALTHCHECK & SPA FALLBACK
 // ===============================
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"));
-});
-
 
 app.get("/health", (req, res) => {
   res.json({
@@ -112,6 +99,11 @@ app.get("/health", (req, res) => {
     message: "MoodScape API is running",
     timestamp: new Date().toISOString(),
   });
+});
+
+// Fallback to frontend for SPA routing
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"));
 });
 
 // ===============================
@@ -128,7 +120,6 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Global error handler:", err);
-
   res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal server error",
@@ -153,7 +144,7 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`🚀 MoodScape API running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`🔗 http://localhost:${PORT}/health`);
+      console.log(`🔗 Healthcheck: http://localhost:${PORT}/health`);
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
