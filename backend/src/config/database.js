@@ -1,17 +1,20 @@
 import { Sequelize } from "sequelize";
-import mysql2 from "mysql2/promise";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
-  throw new Error("DATABASE_URL is not defined! Make sure it's set in Railway environment variables.");
+  throw new Error(
+    "DATABASE_URL is not defined! Make sure it's set in Railway environment variables."
+  );
 }
 
 const sequelize = new Sequelize(DATABASE_URL, {
   dialect: "mysql",
-  dialectModule: mysql2, // pure JS mode
   logging: false,
-  dialectOptions: process.env.NODE_ENV === "production" ? { ssl: { rejectUnauthorized: false } } : {},
+  dialectOptions:
+    process.env.NODE_ENV === "production"
+      ? { ssl: { rejectUnauthorized: false } }
+      : {},
 });
 
 export const testConnection = async () => {
