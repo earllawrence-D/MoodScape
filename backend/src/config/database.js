@@ -1,31 +1,33 @@
-import { Sequelize } from 'sequelize';
-import dotenv from 'dotenv';
-dotenv.config();
+import { Sequelize } from "sequelize";
 
-const sequelize = new Sequelize(
-  process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASSWORD,
-  {
-    host: process.env.DB_HOST || 'localhost',
-    dialect: 'mysql', // or 'postgres'
-    logging: false,
-    define: {
-      timestamps: true,
-      underscored: true
-    }
-  }
-);
+// Use the full Railway MySQL URL
+const DATABASE_URL =
+  process.env.DATABASE_URL ||
+  "mysql://root:yOmWwLqjSXpEHfWzDaKcUOslfQgYXAEi@mysql.railway.internal:3306/railway";
 
-// Helper to test database connection
+// Detect production
+const isProduction = process.env.NODE_ENV === "production";
+
+// Initialize Sequelize
+const sequelize = new Sequelize(DATABASE_URL, {
+  dialect: "mysql",
+  logging: false,
+  dialectOptions: isProduction
+    ? {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false,
+        },
+      }
+    : {},
+});
+
 export const testConnection = async () => {
   try {
     await sequelize.authenticate();
-    console.log('✅ Database connection established successfully.');
-    return true;
+    console.log("✅ Connected to MySQL successfully!");
   } catch (error) {
-    console.error('Database connection error:', error);
-    return false;
+    console.error("❌ Database connection failed:", error.message);
   }
 };
 
