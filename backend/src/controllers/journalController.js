@@ -1,72 +1,121 @@
 // src/controllers/journalController.js
-import JournalEntry from "../models/journal_entries.js"; // your model
-import HarmfulWordLog from "../models/harmful_word_log.js"; // your harmful word log model
-import { Op } from "sequelize";
+import JournalEntry from "../models/Journal.js";
+import HarmfulWordLog from "../models/harmful_word_log.js";
+import { findHarmfulWords } from "../helpers/harmful.js";
+import { getAIResponse } from "../services/aiService.js";
+import { generateAIResponse } from "../helpers/ai-utils.js";
 
-// Create a new journal entry
+// ------------------------------------------------------
+// GET JOURNALS
+// ------------------------------------------------------
+export const getJournals = async (req, res) => {
+  try {
+    if (!req.user?.id)
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const limit = parseInt(req.query.limit) || 10;
+
+    const journals = await JournalEntry.findAll({
+      where: { user_id: req.user.id },
+      order: [["created_at", "DESC"]],
+      limit,
+    });
+
+    const sanitized = journals.map((j) => ({
+      ...j.get({ plain: true }),
+      harmful_words: Array.isArray(j.harmful_words) ? j.harmful_words : [],
+    }));
+
+    res.json({ success: true, data: sanitized });
+  } catch (err) {
+    console.error("Get journals failed:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get journals",
+      error: err.message,
+    });
+  }
+};
+
+// ------------------------------------------------------
+// CREATE JOURNAL
+// ------------------------------------------------------
 export const createJournal = async (req, res) => {
   try {
-    const { user_id, content, mood, mood_score, is_voice, harmful_words } = req.body;
+    if (!req.user?.id)
+      return res.status(401).json({ success: false, message: "Unauthorized" });
 
-    // Validate required fields
-    if (!user_id || !content) {
-      return res.status(400).json({ message: "User ID and content are required." });
+    const { content, is_voice } = req.body;
+
+    if (!content || content.trim() === "")
+      return res
+        .status(400)
+        .json({ success: false, message: "Content is required" });
+
+    // ----------------------------------------
+    // 1️⃣ Detect Harmful Words
+    // ----------------------------------------
+    const harmfulWords = findHarmfulWords(content);
+    const harmfulDetected = harmfulWords.length > 0;
+
+    // ----------------------------------------
+    // 2️⃣ AI Analysis
+    // ----------------------------------------
+    let aiResult = {};
+    try {
+      aiResult = await getAIResponse(content);
+    } catch (error) {
+      console.error("AI error:", error);
     }
 
-    // Validate mood_score (1-10)
-    let validMoodScore = parseInt(mood_score);
-    if (isNaN(validMoodScore) || validMoodScore < 1 || validMoodScore > 10) {
-      validMoodScore = 5; // default neutral
-    }
+    // ----------------------------------------
+    // 3️⃣ Generate safe AI response if harmful
+    // ----------------------------------------
+    const finalAIResponse = generateAIResponse(
+      harmfulDetected,
+      aiResult?.aiResponse || "Keep journaling to track your emotions!"
+    );
 
-    // Ensure harmful_words is a JSON string for DB storage
-    let harmfulWordsArray = [];
-    if (Array.isArray(harmful_words)) {
-      harmfulWordsArray = harmful_words;
-    } else if (typeof harmful_words === "string") {
-      try {
-        harmfulWordsArray = JSON.parse(harmful_words);
-      } catch (err) {
-        harmfulWordsArray = [harmful_words]; // treat as single word
-      }
-    }
-
-    const harmfulWordsStr = harmfulWordsArray.length ? JSON.stringify(harmfulWordsArray) : null;
-
-    // Generate AI response (mock example)
-    const ai_response = JSON.stringify({
-      mood: mood || "neutral",
-      moodScore: validMoodScore,
-      aiResponse: `Keep journaling to track your emotions!`
-    });
-
-    // Create journal entry
+    // ----------------------------------------
+    // 4️⃣ Create Journal Entry
+    // ----------------------------------------
     const journal = await JournalEntry.create({
-      user_id,
+      user_id: req.user.id,
       content,
-      mood: mood || "neutral",
-      mood_score: validMoodScore,
-      is_voice: is_voice || 0,
-      ai_response,
-      harmful_words: harmfulWordsStr,
-      contains_harmful: harmfulWordsArray.length > 0 ? 1 : 0
+      is_voice: !!is_voice,
+      mood: aiResult?.mood || "neutral",
+      mood_score: aiResult?.moodScore ?? 5,
+      ai_report: aiResult?.aiReport || "Keep journaling to track your emotions!",
+      ai_response: finalAIResponse,
+      contains_harmful: harmfulDetected ? 1 : 0,
+      harmful_words: harmfulDetected ? harmfulWords : [],
     });
 
-    // Insert into harmful_word_log if applicable
-    if (harmfulWordsArray.length) {
-      const logEntries = harmfulWordsArray.map(word => ({
+    // ----------------------------------------
+    // 5️⃣ Log Harmful Words
+    // ----------------------------------------
+    if (harmfulDetected) {
+      const logEntries = harmfulWords.map((word) => ({
         journal_entry_id: journal.id,
-        user_id,
+        user_id: req.user.id,
         word,
+        context: content.substring(0, 300),
         created_at: new Date(),
-        updated_at: new Date()
+        updated_at: new Date(),
       }));
       await HarmfulWordLog.bulkCreate(logEntries);
     }
 
-    return res.status(201).json({ message: "Journal created successfully", journal });
+    // ----------------------------------------
+    // 6️⃣ Return response
+    // ----------------------------------------
+    return res.status(201).json({
+      success: true,
+      data: journal.get({ plain: true }),
+      harmful_detected: harmfulDetected,
+    });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    console.error("Journal creation failed:", err);
+    return res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
