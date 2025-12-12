@@ -1,6 +1,6 @@
 // src/controllers/journalController.js
 import JournalEntry from "../models/Journal.js";
-import HarmfulWordLog from "../models/harmful_word_log.js";
+import HarmfulWordLog from "../models/HarmfulWordLog.js";
 import { findHarmfulWords } from "../helpers/harmful.js";
 import { getAIResponse } from "../services/aiService.js";
 import { generateAIResponse } from "../helpers/ai-utils.js";
