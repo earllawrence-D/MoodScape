@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext } from "react";
-import { journalAPI, harmfulWordAPI } from "../utils/api";
+import { api, journalAPI, harmfulWordAPI } from "../utils/api";
 import Navbar from "../components/Navbar";
 import { Send, X } from "lucide-react";
 import { Line } from "react-chartjs-2";
@@ -28,7 +28,7 @@ ChartJS.register(
 );
 
 const analyzeMood = async (text) => {
-  const res = await axios.post("http://localhost:5000/api/mood/analyze", { text });
+  const res = await api.post("/mood/analyze", { text });
   return res.data;
 };
 
