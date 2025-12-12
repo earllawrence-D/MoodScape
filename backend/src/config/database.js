@@ -3,7 +3,7 @@ import mysql2 from "mysql2/promise"; // <- pure JS
 
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: "mysql",
-  dialectModule: mysql2, // <- forces pure JS mode
+  dialectModule: mysql2, // <- forces pure JS
   logging: false,
 });
 
