@@ -1,10 +1,17 @@
 import { Sequelize } from "sequelize";
-import mysql2 from "mysql2/promise"; // <- pure JS
+import mysql2 from "mysql2/promise";
 
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  throw new Error("DATABASE_URL is not defined!");
+}
+
+const sequelize = new Sequelize(DATABASE_URL, {
   dialect: "mysql",
-  dialectModule: mysql2, // <- forces pure JS
+  dialectModule: mysql2, // forces pure JS mode
   logging: false,
+  dialectOptions: process.env.NODE_ENV === "production" ? { ssl: { rejectUnauthorized: false } } : {},
 });
 
 export const testConnection = async () => {
