@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { aiAPI } from "../utils/api";
 import { useVoice } from "../hooks/useVoice";
 import Navbar from "../components/Navbar";
