@@ -61,23 +61,40 @@ app.use(
   })
 );
 
-// CORS
+// CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',            // local dev
-  'https://mood-scape.netlify.app'   // production frontend
+  'https://mood-scape.netlify.app',   // production frontend
+  'https://moodscape-production.up.railway.app'  // production backend
 ];
 
-app.use(cors({
+// Enable pre-flight requests for all routes
+app.options('*', cors({
   origin: (origin, callback) => {
-    // allow requests with no origin (like Postman or mobile apps)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS policy: origin ${origin} not allowed`));
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Apply CORS to all other routes
+app.use(cors({
+  origin: (origin, callback) => {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS policy: origin ${origin} not allowed`));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 
