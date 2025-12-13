@@ -297,22 +297,29 @@ const AIChat = () => {
     const recognizer = new SpeechRecognition();
     recognizer.continuous = false;
     recognizer.interimResults = false;
-      setIsListening(false);
-    };
-  }, []);
-};
 
-// -----------------------------
-// UI
-// -----------------------------
-const circleColor = "#6EE7B7";
-const lineColor = "#FFFFFF";
+    recognizer.onstart = () => {
+      setIsListening(true);
+      startEqualizerMic();
+    };
+
+    recognizer.onend = () => {
+      setIsListening(false);
+      stopSpeaking();
+      cancelAnimationFrame(animationFrameRef.current);
+      setVolumes(new Array(7).fill(0));
+    };
+
+    recognizer.onresult = (event) => {
+      console.log('Speech recognition result:', event);
+      const transcript = event.results[0][0].transcript;
+      console.log('Recognized transcript:', transcript);
       if (transcript) {
         setInput(transcript);
         sendMessage(transcript);
       }
     };
-    
+
     recognizer.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
       alert(`Speech recognition error: ${event.error}`);
@@ -323,6 +330,44 @@ const lineColor = "#FFFFFF";
     recognizer.start();
     recognitionRef.current = recognizer;
   };
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      // Stop any ongoing speech synthesis
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      
+      // Stop any ongoing recognition
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.warn('Error stopping recognition:', e);
+        }
+      }
+      
+      // Clean up audio context
+      if (audioRef.current) {
+        try {
+          if (audioRef.current.state !== 'closed') {
+            audioRef.current.close();
+          }
+        } catch (e) {
+          console.warn('Error closing audio context:', e);
+        }
+      }
+      
+      // Stop any animation
+      cancelAnimationFrame(animationFrameRef.current);
+      
+      // Reset states
+      setVolumes(new Array(7).fill(0));
+      setCurrentSentence("");
+      setIsListening(false);
+    };
+  }, []);
 
   // -----------------------------
   // UI
