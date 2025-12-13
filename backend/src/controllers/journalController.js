@@ -1,5 +1,6 @@
 // src/controllers/journalController.js
-import JournalEntry from "../models/Journal.js";
+import { Op } from 'sequelize';
+import Journal from "../models/Journal.js";
 import HarmfulWordLog from "../models/HarmfulWordLog.js";
 import { findHarmfulWords } from "../helpers/harmful.js";
 import { getAIResponse } from "../services/aiService.js";
@@ -14,69 +15,70 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 // ------------------------------------------------------
 export const getJournals = async (req, res) => {
   console.log('🔍 [getJournals] Starting to fetch journals');
-  const transaction = await sequelize.transaction();
   
   try {
     if (!req.user?.id) {
       console.log('❌ [getJournals] No user ID in request');
-      return res.status(401).json({ 
-        success: false, 
-        message: "Unauthorized: No user ID provided" 
-      });
+      return res.status(400).json({ error: 'User ID is required' });
     }
 
-    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
-    console.log(`📊 [getJournals] Fetching up to ${limit} journals for user ${req.user.id}`);
-
-    // Test database connection first
+    console.log(`📊 [getJournals] Fetching up to 100 journals for user ${req.user.id}`);
+    
+    // Start a transaction
+    const transaction = await sequelize.transaction();
+    
     try {
-      await sequelize.authenticate();
-      console.log('✅ [getJournals] Database connection is active');
-    } catch (dbError) {
-      console.error('❌ [getJournals] Database connection error:', dbError);
-      return res.status(500).json({
-        success: false,
-        message: "Database connection error",
-        error: dbError.message
+      // Get the count first
+      const count = await Journal.count({
+        where: { userId: req.user.id },
+        transaction
       });
+      
+      console.log(`📊 [getJournals] Found ${count} journals for user ${req.user.id}`);
+      
+      // Then get the actual data with proper field mappings
+      const entries = await Journal.findAll({
+        where: { userId: req.user.id },
+        order: [['created_at', 'DESC']],
+        limit: 100,
+        transaction
+      });
+      
+      // Commit the transaction
+      await transaction.commit();
+      
+      console.log(`✅ [getJournals] Successfully retrieved ${entries.length} journals`);
+      
+      // Map the entries to ensure consistent field names
+      const formattedEntries = entries.map(entry => ({
+        id: entry.id,
+        userId: entry.userId,
+        content: entry.content,
+        isVoice: entry.isVoice,
+        mood: entry.mood,
+        moodScore: entry.moodScore,
+        aiReport: entry.aiReport,
+        aiResponse: entry.aiResponse,
+        assignedTherapistId: entry.assignedTherapistId,
+        containsHarmful: entry.containsHarmful,
+        harmfulWords: Array.isArray(entry.harmfulWords) ? entry.harmfulWords : [],
+        isCrisis: entry.isCrisis,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt
+      }));
+      
+      res.status(200).json({
+        success: true,
+        count: formattedEntries.length,
+        data: formattedEntries
+      });
+      
+    } catch (dbError) {
+      // Rollback the transaction if there's an error
+      await transaction.rollback();
+      console.error('❌ [getJournals] Database error:', dbError);
+      throw dbError;
     }
-
-    const journals = await JournalEntry.findAll({
-      where: { userId: req.user.id },
-      order: [["createdAt", "DESC"]],
-      limit,
-      raw: false,
-      nest: true,
-      transaction
-    });
-
-    console.log(`📝 [getJournals] Found ${journals.length} journals`);
-
-    // Convert to plain objects and ensure harmful_words is always an array
-    const sanitized = journals.map(journal => {
-      try {
-        const plainJournal = journal.get({ plain: true });
-        return {
-          ...plainJournal,
-          harmful_words: Array.isArray(plainJournal.harmfulWords) ? 
-            plainJournal.harmfulWords : 
-            (plainJournal.harmfulWords ? [plainJournal.harmfulWords] : [])
-        };
-      } catch (mapError) {
-        console.error('❌ [getJournals] Error processing journal:', mapError);
-        return null;
-      }
-    }).filter(Boolean); // Remove any null entries from mapping errors
-
-    await transaction.commit();
-    console.log('✅ [getJournals] Successfully fetched journals');
-    
-    return res.json({ 
-      success: true, 
-      data: sanitized,
-      count: sanitized.length
-    });
-    
   } catch (err) {
     await transaction.rollback();
     console.error('❌ [getJournals] Error:', {
@@ -100,173 +102,167 @@ export const getJournals = async (req, res) => {
 // ------------------------------------------------------
 export const createJournal = async (req, res) => {
   console.log('📝 [createJournal] Starting journal creation');
+  console.log('📋 [createJournal] Request body:', { 
+    content: req.body.content?.substring(0, 50) + '...', 
+    is_voice: req.body.is_voice 
+  });
+  
+  // Start a transaction
   const transaction = await sequelize.transaction();
   
   try {
-    // Validate user
     if (!req.user?.id) {
       console.log('❌ [createJournal] No user ID in request');
-      return res.status(401).json({ 
-        success: false, 
-        message: "Unauthorized: No user ID provided" 
-      });
+      return res.status(400).json({ error: 'User ID is required' });
     }
 
-    // Validate request body
     const { content, is_voice } = req.body;
-    console.log('📋 [createJournal] Request body:', { 
-      content: content ? `${content.substring(0, 50)}...` : 'empty',
-      is_voice
-    });
-
-    if (!content || content.trim() === "") {
-      console.log('❌ [createJournal] Empty content');
-      return res.status(400).json({ 
-        success: false, 
-        message: "Content is required" 
-      });
+    
+    if (!content) {
+      console.log('❌ [createJournal] No content provided');
+      return res.status(400).json({ error: 'Journal content is required' });
     }
+
+    console.log('🔍 [createJournal] Checking for harmful words');
+    const { containsHarmful, harmfulWords } = await findHarmfulWords(content);
+    
+    if (containsHarmful) {
+      console.log('⚠️ [createJournal] Harmful content detected:', harmfulWords);
+      
+      // Log harmful words to the database
+      await HarmfulWordLog.bulkCreate(
+        harmfulWords.map(word => ({
+          journal_entry_id: null, // Will be updated after journal creation
+          user_id: req.user.id,
+          word: word,
+          context: content
+        })),
+        { transaction }
+      );
+    } else {
+      console.log('🛡️ [createJournal] Harmful words detected: No');
+    }
+
+    console.log('🤖 [createJournal] Starting AI analysis');
+    let aiAnalysis = {
+      mood: 'neutral',
+      moodScore: 5,
+      aiResponse: 'Keep journaling to track your emotions!',
+      aiReport: 'Keep journaling to track your emotions!'
+    };
 
     try {
-      // ----------------------------------------
-      // 1️⃣ Detect Harmful Words
-      // ----------------------------------------
-      console.log('🔍 [createJournal] Checking for harmful words');
-      const harmfulWords = findHarmfulWords(content);
-      const harmfulDetected = harmfulWords.length > 0;
-      console.log(`🛡️ [createJournal] Harmful words detected: ${harmfulWords.length > 0 ? 'Yes' : 'No'}`);
-      if (harmfulDetected) {
-        console.log('⚠️ [createJournal] Harmful words found:', harmfulWords);
-      }
-
-      // ----------------------------------------
-      // 2️⃣ AI Analysis
-      // ----------------------------------------
-      console.log('🤖 [createJournal] Starting AI analysis');
-      let aiResult = {
-        mood: "neutral",
-        moodScore: 5,
-        aiReport: "Keep journaling to track your emotions!",
-        aiResponse: "Keep journaling to track your emotions!"
-      };
-      
-      try {
-        const aiResponse = await getAIResponse(content);
-        console.log('✅ [createJournal] AI analysis successful');
-        aiResult = {
-          ...aiResult,
-          ...aiResponse,
-          mood: aiResponse?.mood || "neutral",
-          moodScore: typeof aiResponse?.moodScore === 'number' ? aiResponse.moodScore : 5,
-          aiReport: aiResponse?.aiReport || aiResult.aiReport,
-          aiResponse: aiResponse?.aiResponse || aiResult.aiResponse
+      const aiResponse = await generateAIResponse(content);
+      if (aiResponse) {
+        aiAnalysis = {
+          mood: aiResponse.mood || 'neutral',
+          moodScore: aiResponse.moodScore || 5,
+          aiResponse: aiResponse.aiResponse || 'Keep journaling to track your emotions!',
+          aiReport: aiResponse.aiReport || 'Keep journaling to track your emotions!'
         };
-      } catch (aiError) {
-        console.error('⚠️ [createJournal] AI analysis failed, using defaults:', aiError.message);
-        // Continue with default values
       }
-
-      // Prepare journal data
-      const journalData = {
-        userId: req.user.id,
-        content: content.trim(),
-        isVoice: !!is_voice,
-        mood: aiResult.mood,
-        moodScore: aiResult.moodScore,
-        aiReport: aiResult.aiReport,
-        aiResponse: aiResult.aiResponse,
-        containsHarmful: harmfulDetected,
-        harmfulWords: harmfulWords
-      };
-
-      console.log('📄 [createJournal] Journal data prepared:', {
-        ...journalData,
-        content: `${journalData.content.substring(0, 30)}...`
-      });
-
-      // ----------------------------------------
-      // 3️⃣ Create Journal Entry
-      // ----------------------------------------
-      console.log('💾 [createJournal] Saving journal to database');
-      const journal = await JournalEntry.create(journalData, { 
-        transaction,
-        returning: true,
-        raw: true
-      });
-      
-      console.log('✅ [createJournal] Journal saved with ID:', journal.id);
-
-      // ----------------------------------------
-      // 4️⃣ Log Harmful Words if any
-      // ----------------------------------------
-      if (harmfulDetected && harmfulWords.length > 0) {
-        console.log('📝 [createJournal] Logging harmful words');
-        const logEntries = harmfulWords.map((word) => ({
-          journalEntryId: journal.id,
-          userId: req.user.id,
-          word: String(word).substring(0, 255),
-          context: String(content).substring(0, 300),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }));
-
-        try {
-          await HarmfulWordLog.bulkCreate(logEntries, { transaction });
-          console.log(`✅ [createJournal] Logged ${logEntries.length} harmful words`);
-        } catch (logError) {
-          console.error('⚠️ [createJournal] Failed to log harmful words:', logError);
-          // Don't fail the whole request if logging fails
-        }
-      }
-
-      // Commit the transaction
-      await transaction.commit();
-      console.log('✅ [createJournal] Transaction committed successfully');
-
-      // Get the created journal with proper serialization
-      const createdJournal = journal.get ? journal.get({ plain: true }) : journal;
-
-      // ----------------------------------------
-      // 5️⃣ Return successful response
-      // ----------------------------------------
-      console.log('🎉 [createJournal] Journal created successfully');
-      return res.status(201).json({
-        success: true,
-        data: {
-          ...createdJournal,
-          harmful_words: Array.isArray(createdJournal.harmfulWords) ? 
-            createdJournal.harmfulWords : 
-            (createdJournal.harmfulWords ? [createdJournal.harmfulWords] : [])
-        },
-        harmful_detected: harmfulDetected,
-      });
-
-    } catch (error) {
-      // Rollback the transaction in case of error
-      console.error('❌ [createJournal] Error in transaction, rolling back:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
-        ...(error.original && { originalError: error.original })
-      });
-      
-      await transaction.rollback();
-      throw error; // Re-throw to be caught by the outer catch
+      console.log('✅ [createJournal] AI analysis successful');
+    } catch (aiError) {
+      console.error('⚠️ [createJournal] AI analysis failed:', aiError);
+      // Continue with default values if AI fails
     }
 
+    console.log('💾 [createJournal] Saving journal to database');
+    const journalData = {
+      userId: req.user.id,
+      content,
+      isVoice: !!is_voice,
+      mood: aiAnalysis.mood,
+      moodScore: aiAnalysis.moodScore,
+      aiReport: aiAnalysis.aiReport,
+      aiResponse: aiAnalysis.aiResponse,
+      containsHarmful,
+      harmfulWords: harmfulWords || []
+    };
+
+    console.log('📄 [createJournal] Journal data prepared:', {
+      userId: journalData.userId,
+      content: journalData.content.substring(0, 50) + '...',
+      isVoice: journalData.isVoice,
+      mood: journalData.mood,
+      moodScore: journalData.moodScore,
+      containsHarmful: journalData.containsHarmful,
+      harmfulWords: journalData.harmfulWords
+    });
+
+    const journal = await Journal.create(journalData, { transaction });
+    
+    // Update harmful word logs with the new journal entry ID
+    if (containsHarmful && harmfulWords.length > 0) {
+      await HarmfulWordLog.update(
+        { journal_entry_id: journal.id },
+        { 
+          where: { 
+            user_id: req.user.id, 
+            journal_entry_id: null 
+          },
+          transaction 
+        }
+      );
+    }
+
+    await transaction.commit();
+    
+    console.log(`✅ [createJournal] Journal entry created with ID: ${journal.id}`);
+    
+    // Format the response
+    const responseData = {
+      id: journal.id,
+      userId: journal.userId,
+      content: journal.content,
+      isVoice: journal.isVoice,
+      mood: journal.mood,
+      moodScore: journal.moodScore,
+      aiReport: journal.aiReport,
+      aiResponse: journal.aiResponse,
+      containsHarmful: journal.containsHarmful,
+      harmfulWords: Array.isArray(journal.harmfulWords) ? journal.harmfulWords : [],
+      isCrisis: journal.isCrisis,
+      createdAt: journal.createdAt,
+      updatedAt: journal.updatedAt
+    };
+    
+    return res.status(201).json({
+      success: true,
+      data: responseData,
+      harmful_detected: containsHarmful
+    });
+
   } catch (error) {
-    console.error('❌ [createJournal] Critical error:', {
+    console.error('❌ [createJournal] Error in transaction, rolling back:', {
       message: error.message,
       stack: error.stack,
       name: error.name,
       ...(error.original && { originalError: error.original })
     });
     
+    if (transaction) {
+      await transaction.rollback();
+    }
+    
+    // Handle validation errors
+    if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors?.map(err => ({
+          field: err.path,
+          message: err.message
+        }))
+      });
+    }
+    
+    // Handle other errors
     return res.status(500).json({ 
       success: false, 
       message: "Failed to create journal entry",
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-      ...(process.env.NODE_ENV === 'development' && { 
+      ...(isDevelopment && {
+        error: error.message,
         stack: error.stack,
         ...(error.original && { originalError: error.original })
       })
