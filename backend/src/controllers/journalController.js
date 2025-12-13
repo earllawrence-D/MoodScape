@@ -6,6 +6,9 @@ import { getAIResponse } from "../services/aiService.js";
 import { generateAIResponse } from "../helpers/ai-utils.js";
 import sequelize from "../config/database.js";
 
+// Enable logging for development
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 // ------------------------------------------------------
 // GET JOURNALS
 // ------------------------------------------------------
