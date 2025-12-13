@@ -20,8 +20,29 @@ const AIChat = () => {
 
   // Speak text with TTS
   const speakResponse = async (text) => {
-    const clean = sanitizeForTTS(text);
-    await speakText(clean);
+    try {
+      console.log('Starting TTS for text:', text);
+      const clean = sanitizeForTTS(text);
+      
+      // For iOS/Safari, we need to ensure audio context is created/resumed on user gesture
+      if (audioRef.current?.state === 'suspended') {
+        console.log('Audio context was suspended, resuming...');
+        await audioRef.current.resume();
+      }
+      
+      await speakText(clean);
+      console.log('TTS completed successfully');
+    } catch (error) {
+      console.error('TTS Error:', error);
+      // Fallback to native speech synthesis if custom TTS fails
+      if ('speechSynthesis' in window) {
+        console.log('Falling back to native speech synthesis');
+        const utterance = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        console.error('Native speech synthesis not available');
+      }
+    }
   };
 
   // -----------------------------
@@ -112,32 +133,46 @@ const AIChat = () => {
   // -----------------------------
   // STT / Listening Toggle
   // -----------------------------
-  const toggleListening = () => {
+  const toggleListening = async () => {
+    console.log('Toggle listening called, current state:', isListening);
+    
     if (isListening) {
+      console.log('Stopping listening...');
       recognitionRef.current?.stop();
       stopSpeaking();
       setIsListening(false);
       setCurrentSentence("");
-      audioRef.current?.close();
+      if (audioRef.current) {
+        console.log('Closing audio context');
+        await audioRef.current.close();
+        audioRef.current = null;
+      }
       cancelAnimationFrame(animationFrameRef.current);
       setVolumes(new Array(7).fill(0));
       return;
     }
 
     // Check for secure context on mobile
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const isSecure = window.isSecureContext || 
                     window.location.protocol === 'https:' || 
                     window.location.hostname === 'localhost' ||
                     window.location.hostname === '127.0.0.1';
+    
+    console.log('Mobile:', isMobile, 'Secure Context:', isSecure, 'Protocol:', window.location.protocol);
 
-    if (!isSecure) {
-      alert('Voice input requires a secure context (HTTPS) on mobile devices. Please use the text input instead.');
+    if (isMobile && !isSecure) {
+      const errorMsg = 'Voice input requires a secure context (HTTPS) on mobile devices. Please use the text input instead.';
+      console.warn(errorMsg);
+      alert(errorMsg);
       return;
     }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in your browser.");
+      const errorMsg = "Speech recognition is not supported in your browser.";
+      console.error(errorMsg);
+      alert(errorMsg);
       return;
     }
 
@@ -160,8 +195,20 @@ const AIChat = () => {
     };
 
     recognizer.onresult = (event) => {
+      console.log('Speech recognition result:', event);
       const transcript = event.results[0][0].transcript;
-      if (transcript) sendMessage(transcript);
+      console.log('Recognized transcript:', transcript);
+      if (transcript) {
+        setInput(transcript);
+        sendMessage(transcript);
+      }
+    };
+    
+    recognizer.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      alert(`Speech recognition error: ${event.error}`);
+      setIsListening(false);
+      setVolumes(new Array(7).fill(0));
     };
 
     recognizer.start();
