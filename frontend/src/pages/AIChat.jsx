@@ -1,27 +1,82 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { aiAPI } from "../utils/api";
 import { useVoice } from "../hooks/useVoice";
 import Navbar from "../components/Navbar";
 import { sanitizeForTTS } from "../utils/sanitizeForTTS";
+import { Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
 
 const AIChat = () => {
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [volumes, setVolumes] = useState(new Array(7).fill(0));
   const [currentSentence, setCurrentSentence] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+  const [ttsSupported, setTtsSupported] = useState(true);
+  const [ttsPermission, setTtsPermission] = useState('prompt');
 
   const audioRef = useRef(null);
   const analyserRef = useRef(null);
   const dataArrayRef = useRef(null);
   const recognitionRef = useRef(null);
   const animationFrameRef = useRef(null);
+  const inputRef = useRef(null);
 
-  const { speakText, stopSpeaking } = useVoice();
+  const { speakText, stopSpeaking, isSpeaking: isTtsSpeaking } = useVoice();
+
+  // Check if device is mobile and TTS support
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(isMobileDevice);
+      
+      // Check TTS support
+      if (!('speechSynthesis' in window) || !('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+        setTtsSupported(false);
+      }
+      
+      // Check TTS permission state if supported
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'microphone' })
+          .then(permissionStatus => {
+            setTtsPermission(permissionStatus.state);
+            permissionStatus.onchange = () => setTtsPermission(permissionStatus.state);
+          });
+      }
+    };
+    
+    checkMobile();
+    
+    // Cleanup
+    return () => {
+      stopListening();
+      stopSpeaking();
+    };
+  }, [stopSpeaking]);
+
+  // Update speaking state
+  useEffect(() => {
+    setIsSpeaking(isTtsSpeaking);
+  }, [isTtsSpeaking]);
 
   // Speak text with TTS
   const speakResponse = async (text) => {
-    const clean = sanitizeForTTS(text);
-    await speakText(clean);
+    if (!ttsSupported) {
+      console.warn('TTS not supported on this device');
+      return;
+    }
+    
+    try {
+      const clean = sanitizeForTTS(text);
+      await speakText(clean);
+    } catch (error) {
+      console.error('Error with TTS:', error);
+      // Fallback to native speech synthesis if custom hook fails
+      if (window.speechSynthesis) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.speak(utterance);
+      }
+    }
   };
 
   // -----------------------------
@@ -154,157 +209,181 @@ const AIChat = () => {
   // -----------------------------
   // STT / Listening Toggle
   // -----------------------------
-  const toggleListening = () => {
+  const toggleListening = async () => {
     if (isListening) {
-      recognitionRef.current?.stop();
-      stopSpeaking();
-      setIsListening(false);
-      setCurrentSentence("");
-      audioRef.current?.close();
-      cancelAnimationFrame(animationFrameRef.current);
-      setVolumes(new Array(7).fill(0));
+      stopListening();
       return;
     }
 
-      // Check for mobile Safari
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    
-    // Check for secure context on mobile
-    const isSecure = window.isSecureContext || 
-                    window.location.protocol === 'https:' || 
-                    window.location.hostname === 'localhost' ||
-                    window.location.hostname === '127.0.0.1';
-
-    if (!isSecure) {
-      alert('Voice input requires a secure context (HTTPS) on mobile devices. Please use the text input instead.');
-      return;
+    try {
+      // Request microphone permission on mobile
+      if (isMobile && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      }
+      
+      startListening();
+    } catch (error) {
+      console.error('Microphone access denied:', error);
+      alert('Please allow microphone access to use voice input.');
     }
+  };
 
-    // Use webkitSpeechRecognition for Safari/iOS
+  const startListening = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in your browser.");
+      alert('Your browser does not support speech recognition. Please use Chrome, Edge, or Safari on iOS 14+.');
       return;
     }
 
-    const recognizer = new SpeechRecognition();
-    recognizer.continuous = false;
-    recognizer.interimResults = false;
-    recognizer.lang = "en-US";
-    
-    // Additional configuration for iOS/Safari
-    if (isIOS || isSafari) {
-      recognizer.continuous = true; // Helps with iOS quirks
-      recognizer.interimResults = true; // Get interim results for better UX
-    }
+    try {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false; // Changed to false for better mobile compatibility
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
 
-    recognizer.onstart = () => {
+      recognitionRef.current.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0]?.transcript || '')
+          .join('');
+        
+        setInput(prev => prev ? `${prev} ${transcript}` : transcript);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error', event.error);
+        if (event.error === 'not-allowed') {
+          alert('Microphone access was denied. Please allow microphone access in your browser settings.');
+        }
+        stopListening();
+      };
+
+      recognitionRef.current.onend = () => {
+        if (isListening) {
+          // On mobile, we don't auto-restart to save battery
+          if (!isMobile) {
+            recognitionRef.current.start();
+          } else {
+            setIsListening(false);
+          }
+        }
+      };
+
+      recognitionRef.current.start();
       setIsListening(true);
-      startEqualizerMic();
-    };
-
-    recognizer.onend = () => {
-      setIsListening(false);
-      stopSpeaking();
-      audioRef.current?.close();
-      cancelAnimationFrame(animationFrameRef.current);
-      setVolumes(new Array(7).fill(0));
-    };
-
-    recognizer.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript) sendMessage(transcript);
-    };
-
-    recognizer.start();
-    recognitionRef.current = recognizer;
+    } catch (error) {
+      console.error('Error initializing speech recognition:', error);
+      alert('Error initializing speech recognition. Please try again.');
+    }
   };
 
-  // -----------------------------
-  // UI
-  // -----------------------------
-  const circleColor = "#6EE7B7";
-  const lineColor = "#FFFFFF";
-
   return (
-    <div
-      className="min-h-screen flex flex-col items-center px-4 w-full"
-      style={{ background: "linear-gradient(145deg, #d9e9ff, #d7fff0, #fce7ff)" }}
-    >
+    <div className="min-h-screen bg-gray-50 pb-24 md:pb-6">
       <Navbar />
+      <div className="max-w-4xl mx-auto px-4 py-6">
+        {/* Chat messages */}
+        <div className="mb-4 space-y-4">
+          {/* Messages will be displayed here */}
+        </div>
+      </div>
 
-      <div className="w-full max-w-4xl flex-1 flex flex-col items-center pt-6 md:pt-12 pb-8 px-4">
-        {/* Listening Circle */}
-        <div 
-          className="relative cursor-pointer select-none w-full max-w-md mx-auto"
-          onClick={toggleListening}
-          role="button"
-          aria-label={isListening ? "Stop listening" : "Start speaking"}
-        >
-          <div
-            className={`relative w-full aspect-square rounded-full shadow-xl border-2 flex items-center justify-center transition-all duration-500
-            ${isListening ? "ring-8 ring-teal-300 animate-pulse" : "ring-4 ring-gray-300"}
-            max-w-xs sm:max-w-sm mx-auto`}
-            style={{ background: circleColor }}
-          >
-            <div className="flex items-center justify-center gap-2 sm:gap-3 w-3/4 h-3/4">
-              {volumes.map((value, i) => (
+      {/* Input area - Fixed at bottom on mobile, relative on desktop */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg md:relative md:border-t-0 md:shadow-none">
+        <div className="max-w-4xl mx-auto flex flex-col space-y-2">
+          {/* Visualizer for when listening */}
+          {isListening && (
+            <div className="flex justify-center items-center space-x-1 h-8 mb-2">
+              {volumes.map((volume, i) => (
                 <div
                   key={i}
-                  className="w-2 sm:w-3 rounded-full bg-white transition-transform duration-150 ease-out flex-shrink-0"
+                  className="w-1 bg-primary-500 rounded-full transition-all duration-100"
                   style={{
-                    height: `${value * 100}%`,
-                    maxHeight: '120px',
-                    transform: `translateY(${50 - value * 25}%)`,
-                    background: lineColor,
+                    height: `${5 + Math.random() * 20}%`,
+                    transform: `scaleY(${isListening ? 1 + Math.random() * 2 : 1})`,
                   }}
-                  aria-hidden="true"
                 />
               ))}
             </div>
+          )}
+          
+          <div className="flex items-center space-x-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={isMobile ? "Type or tap mic..." : "Type your message..."}
+              className="flex-1 px-4 py-3 md:py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-base"
+              onKeyPress={(e) => e.key === 'Enter' && input.trim() && sendMessage(input)}
+              aria-label="Message input"
+            />
+            
+            {/* Voice input button */}
+            <button
+              onClick={toggleListening}
+              disabled={!ttsSupported}
+              className={`p-3 rounded-full transition-colors ${
+                isListening 
+                  ? 'bg-red-500 text-white' 
+                  : ttsSupported 
+                    ? 'bg-primary-100 text-primary-600 hover:bg-primary-200' 
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+              aria-label={isListening ? 'Stop listening' : 'Start voice input'}
+              title={ttsSupported ? (isListening ? 'Stop listening' : 'Voice input') : 'Voice input not supported'}
+            >
+              {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+            
+            {/* Send button */}
+            <button
+              onClick={() => input.trim() && sendMessage(input)}
+              disabled={!input.trim()}
+              className={`p-3 rounded-full transition-colors ${
+                input.trim() 
+                  ? 'bg-primary-500 text-white hover:bg-primary-600' 
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+              aria-label="Send message"
+            >
+              <Send size={20} />
+            </button>
           </div>
-
-          {/* Text */}
-          <p className="text-center mt-4 sm:mt-6 text-base sm:text-lg font-medium text-gray-700">
-            {isListening ? "Listening…" : "Tap to speak"}
-          </p>
+          
+          {/* TTS Controls */}
+          <div className="flex justify-end items-center space-x-2">
+            <button
+              onClick={() => isSpeaking ? stopSpeaking() : currentSentence && speakResponse(currentSentence)}
+              disabled={!currentSentence}
+              className={`text-sm flex items-center space-x-1 px-3 py-1 rounded-full ${
+                currentSentence 
+                  ? 'text-primary-600 hover:bg-primary-50' 
+                  : 'text-gray-400'
+              }`}
+              aria-label={isSpeaking ? 'Stop speaking' : 'Read response aloud'}
+            >
+              {isSpeaking ? (
+                <>
+                  <VolumeX size={16} />
+                  <span>Stop</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 size={16} />
+                  <span>Listen</span>
+                </>
+              )}
+            </button>
+          </div>
+          
+          {/* Mobile browser notice */}
+          {isMobile && !ttsSupported && (
+            <div className="text-xs text-gray-500 text-center mt-1">
+              Voice input may require Chrome or Safari on iOS 14.3+
+            </div>
+          )}
         </div>
-
-        {/* Spoken AI Sentence */}
-        {currentSentence && (
-          <div className="mt-4 sm:mt-6 p-4 bg-white/90 rounded-xl shadow-lg w-full max-w-2xl mx-auto text-center">
-            {currentSentence}
-          </div>
-        )}
-
-        {/* Input Form */}
-        <form
-          className="mt-12 flex items-center gap-3 w-full max-w-lg"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (input.trim()) {
-              sendMessage(input);
-              setInput("");
-            }
-          }}
-        >
-          <input
-            className="flex-1 p-3 rounded-xl shadow bg-white/70 border border-gray-300 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-            placeholder="Type your message…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            aria-label="Type your message"
-          />
-          <button 
-            type="submit"
-            className="px-5 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 shadow-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={!input.trim()}
-          >
-            Send
-          </button>
-        </form>
       </div>
     </div>
   );
