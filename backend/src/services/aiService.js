@@ -9,6 +9,40 @@ const MOOD_LABELS = [
   'grateful', 'hopeful', 'proud', 'content'
 ];
 
+// Helper function to analyze mood from text
+const analyzeMoodFromText = (text) => {
+  if (!text) return 'neutral';
+  
+  const lowerText = text.toLowerCase();
+  
+  if (/(sad|depressed|down|miserable|unhappy|upset)/.test(lowerText)) return 'sad';
+  if (/(happy|joy|excited|great|amazing|wonderful)/.test(lowerText)) return 'happy';
+  if (/(angry|mad|frustrated|annoyed|irritated)/.test(lowerText)) return 'angry';
+  if (/(anxious|nervous|worried|stressed|overwhelmed)/.test(lowerText)) return 'anxious';
+  
+  return 'neutral';
+};
+
+// Helper function to analyze mood score from text (1-10)
+const analyzeMoodScoreFromText = (text) => {
+  if (!text) return 5;
+  
+  const lowerText = text.toLowerCase();
+  let score = 5; // neutral
+  
+  // Positive indicators
+  if (/(happy|joy|excited|great|amazing|wonderful|good|pleased)/.test(lowerText)) score += 3;
+  if (/(sad|depressed|down|miserable|unhappy|upset)/.test(lowerText)) score -= 3;
+  if (/(angry|mad|frustrated|annoyed|irritated)/.test(lowerText)) score -= 2;
+  if (/(anxious|nervous|worried|stressed|overwhelmed)/.test(lowerText)) score -= 1;
+  
+  // Emergency/crisis indicators
+  if (/(suicid|kill myself|end it all|want to die|no reason to live)/.test(lowerText)) score = 1;
+  
+  // Ensure score is between 1 and 10
+  return Math.max(1, Math.min(10, score));
+};
+
 const generateMoodAnalysis = (content) => {
   const positiveWords = ['happy', 'good', 'great', 'excited', 'joy', 'love', 'amazing', 'wonderful', 'fantastic'];
   const negativeWords = ['sad', 'bad', 'terrible', 'awful', 'hate', 'angry', 'frustrated', 'anxious', 'stressed'];
@@ -48,7 +82,8 @@ const generateMoodAnalysis = (content) => {
   return {
     mood: moodLabel,
     moodScore: score,
-    aiResponse: response
+    aiResponse: response,
+    aiReport: `Automated analysis detected mood as ${moodLabel} (${score}/10). ${response}`
   };
 };
 
@@ -79,18 +114,53 @@ Be empathetic and understanding. If the user is sharing something difficult, ack
     
     // Try to extract JSON from the response
     try {
-      // Handle cases where the response might be wrapped in markdown code blocks
-      const jsonMatch = raw.match(/```(?:json)?\n([\s\S]*?)\n```/) || [null, raw];
-      const jsonString = jsonMatch[1] || jsonMatch[0] || raw;
+      // First, try to find JSON in markdown code blocks
+      const jsonMatch = raw.match(/```(?:json)?\n([\s\S]*?)\n```/);
       
-      const parsed = JSON.parse(jsonString);
-      return {
-        mood: parsed.mood?.toLowerCase() || "neutral",
-        moodScore: parsed.moodScore ? Math.max(1, Math.min(10, parseInt(parsed.moodScore))) : 5,
-        aiResponse: parsed.aiResponse || "Thank you for sharing your thoughts. I'm here to listen."
-      };
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[1]);
+        return {
+          mood: (parsed.mood || 'neutral').toLowerCase(),
+          moodScore: Math.max(1, Math.min(10, parseInt(parsed.moodScore) || 5)),
+          aiResponse: parsed.aiResponse || "Thank you for sharing your thoughts. I'm here to listen.",
+          aiReport: parsed.aiReport || ''
+        };
+      }
+      
+      // If no JSON found, try to parse the entire response as JSON
+      try {
+        const parsed = JSON.parse(raw);
+        return {
+          mood: (parsed.mood || 'neutral').toLowerCase(),
+          moodScore: Math.max(1, Math.min(10, parseInt(parsed.moodScore) || 5)),
+          aiResponse: parsed.aiResponse || "Thank you for sharing your thoughts. I'm here to listen.",
+          aiReport: parsed.aiReport || ''
+        };
+      } catch (e) {
+        // If it's not valid JSON, treat the entire response as the AI message
+        console.log('AI returned non-JSON response, using as message');
+        return {
+          mood: this.analyzeMoodFromText(raw) || 'neutral',
+          moodScore: this.analyzeMoodScoreFromText(raw) || 5,
+          aiResponse: raw,
+          aiReport: raw
+        };
+      }
     } catch (e) {
-      console.warn("AI returned invalid JSON, falling back to simple analysis. Raw response:", raw);
+      console.warn("AI service error, falling back to simple analysis. Error:", e.message);
+      console.warn("Raw response:", raw);
+      
+      // If we have a raw response but couldn't parse it, use it as the message
+      if (raw && typeof raw === 'string') {
+        return {
+          mood: this.analyzeMoodFromText(raw) || 'neutral',
+          moodScore: this.analyzeMoodScoreFromText(raw) || 5,
+          aiResponse: raw,
+          aiReport: raw
+        };
+      }
+      
+      // Fall back to basic analysis
       return generateMoodAnalysis(content);
     }
 
