@@ -55,11 +55,21 @@ const AIChat = () => {
       await initAudioContext();
       
       // For mobile devices, we need to create a new Audio instance for each utterance
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobileDevice) {
         console.log('Mobile device detected, using mobile TTS strategy');
+        
+        // Ensure speechSynthesis is available
+        if (!window.speechSynthesis) {
+          throw new Error('Speech synthesis not supported on this device');
+        }
+        
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+        
         const utterance = new SpeechSynthesisUtterance(clean);
         
-        // iOS requires these settings
+        // Mobile-specific settings
         utterance.volume = 1;
         utterance.rate = 0.9;
         utterance.pitch = 1;
@@ -72,10 +82,18 @@ const AIChat = () => {
           
           utterance.onerror = (event) => {
             console.error('Mobile TTS error:', event);
-            reject(event.error);
+            reject(event.error || 'TTS failed');
           };
           
-          window.speechSynthesis.speak(utterance);
+          // Small delay to ensure previous speech is cancelled
+          setTimeout(() => {
+            try {
+              window.speechSynthesis.speak(utterance);
+            } catch (e) {
+              console.error('Error speaking utterance:', e);
+              reject(e);
+            }
+          }, 100);
         });
       } else {
         // Use the custom TTS for desktop
@@ -86,22 +104,7 @@ const AIChat = () => {
       console.log('TTS completed successfully');
     } catch (error) {
       console.error('TTS Error:', error);
-      
-      // Fallback to native speech synthesis if custom TTS fails
-      if ('speechSynthesis' in window) {
-        try {
-          console.log('Falling back to native speech synthesis');
-          const utterance = new SpeechSynthesisUtterance(clean);
-          return new Promise((resolve) => {
-            utterance.onend = resolve;
-            window.speechSynthesis.speak(utterance);
-          });
-        } catch (fallbackError) {
-          console.error('Native TTS fallback failed:', fallbackError);
-        }
-      } else {
-        console.error('Native speech synthesis not available');
-      }
+      throw error; // Re-throw to be caught by the caller
     }
   };
 
@@ -132,19 +135,50 @@ const AIChat = () => {
         }, [])
         .filter(Boolean);
 
-      // Fake bar animation while AI is speaking
-      const fakeAnimation = setInterval(() => {
-        setVolumes(Array(7).fill(Math.random() * 0.8));
-      }, 150);
+      // Animation state ref to track if we should keep animating
+      const isAnimating = useRef(true);
+      
+      // Cleanup function to stop animation
+      const stopAnimation = () => {
+        isAnimating.current = false;
+        setVolumes(new Array(7).fill(0));
+        setCurrentSentence("");
+      };
 
-      for (const line of lines) {
-        setCurrentSentence(line);
-        await speakResponse(line);
+      // Animation frame for smooth visualization
+      const animate = () => {
+        if (!isAnimating.current) return;
+        
+        setVolumes(prevVolumes => {
+          // Create a smooth wave-like animation
+          const now = Date.now();
+          return prevVolumes.map((_, i) => {
+            const offset = i * 0.5; // Stagger the waves
+            return Math.sin((now / 200) + offset) * 0.4 + 0.5; // Values between 0.1 and 0.9
+          });
+        });
+        
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+      
+      // Start animation
+      animationFrameRef.current = requestAnimationFrame(animate);
+
+      try {
+        for (const line of lines) {
+          if (!isAnimating.current) break; // Stop if animation was cancelled
+          
+          setCurrentSentence(line);
+          await speakResponse(line).catch(error => {
+            console.error('Error in speakResponse:', error);
+            throw error; // Re-throw to be caught by the outer try-catch
+          });
+        }
+      } finally {
+        // Ensure we always clean up, even if there's an error
+        stopAnimation();
+        cancelAnimationFrame(animationFrameRef.current);
       }
-
-      clearInterval(fakeAnimation);
-      setVolumes(new Array(7).fill(0));
-      setCurrentSentence("");
     } catch {
       const errorMsg = "Something went wrong. Let's try again gently.";
       setCurrentSentence(errorMsg);
@@ -263,25 +297,16 @@ const AIChat = () => {
     const recognizer = new SpeechRecognition();
     recognizer.continuous = false;
     recognizer.interimResults = false;
-    recognizer.lang = "en-US";
-
-    recognizer.onstart = () => {
-      setIsListening(true);
-      startEqualizerMic();
-    };
-
-    recognizer.onend = () => {
       setIsListening(false);
-      stopSpeaking();
-      audioRef.current?.close();
-      cancelAnimationFrame(animationFrameRef.current);
-      setVolumes(new Array(7).fill(0));
     };
+  }, []);
+};
 
-    recognizer.onresult = (event) => {
-      console.log('Speech recognition result:', event);
-      const transcript = event.results[0][0].transcript;
-      console.log('Recognized transcript:', transcript);
+// -----------------------------
+// UI
+// -----------------------------
+const circleColor = "#6EE7B7";
+const lineColor = "#FFFFFF";
       if (transcript) {
         setInput(transcript);
         sendMessage(transcript);
