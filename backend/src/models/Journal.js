@@ -26,7 +26,17 @@ Journal.init(
 
     // 🆕 Crisis + Harmful detection fields
     containsHarmful: { type: DataTypes.BOOLEAN, defaultValue: false },
-    harmfulWords: { type: DataTypes.TEXT, allowNull: true },
+    harmfulWords: { 
+      type: DataTypes.TEXT, 
+      allowNull: true,
+      get() {
+        const value = this.getDataValue('harmfulWords');
+        return value ? JSON.parse(value) : [];
+      },
+      set(value) {
+        this.setDataValue('harmfulWords', value ? JSON.stringify(value) : '[]');
+      }
+    },
 
     // Legacy field you already have
     isCrisis: { type: DataTypes.BOOLEAN, defaultValue: false },
