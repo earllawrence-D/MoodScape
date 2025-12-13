@@ -16,14 +16,19 @@ export const getJournals = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
 
     const journals = await JournalEntry.findAll({
-      where: { user_id: req.user.id },
-      order: [["created_at", "DESC"]],
+      where: { userId: req.user.id },
+      order: [["createdAt", "DESC"]],
       limit,
+      raw: true,
+      nest: true
     });
 
-    const sanitized = journals.map((j) => ({
-      ...j.get({ plain: true }),
-      harmful_words: Array.isArray(j.harmful_words) ? j.harmful_words : [],
+    // Ensure harmful_words is always an array
+    const sanitized = journals.map(journal => ({
+      ...journal,
+      harmful_words: journal.harmfulWords ? 
+        (Array.isArray(journal.harmfulWords) ? journal.harmfulWords : []) : 
+        []
     }));
 
     res.json({ success: true, data: sanitized });

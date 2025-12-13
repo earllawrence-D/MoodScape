@@ -113,9 +113,6 @@ const AIChat = () => {
   // STT / Listening Toggle
   // -----------------------------
   const toggleListening = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return alert("Speech recognition unsupported.");
-
     if (isListening) {
       recognitionRef.current?.stop();
       stopSpeaking();
@@ -124,6 +121,23 @@ const AIChat = () => {
       audioRef.current?.close();
       cancelAnimationFrame(animationFrameRef.current);
       setVolumes(new Array(7).fill(0));
+      return;
+    }
+
+    // Check for secure context on mobile
+    const isSecure = window.isSecureContext || 
+                    window.location.protocol === 'https:' || 
+                    window.location.hostname === 'localhost' ||
+                    window.location.hostname === '127.0.0.1';
+
+    if (!isSecure) {
+      alert('Voice input requires a secure context (HTTPS) on mobile devices. Please use the text input instead.');
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in your browser.");
       return;
     }
 
@@ -162,65 +176,82 @@ const AIChat = () => {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center px-4"
+      className="min-h-screen flex flex-col items-center px-4 w-full"
       style={{ background: "linear-gradient(145deg, #d9e9ff, #d7fff0, #fce7ff)" }}
     >
       <Navbar />
 
-      {/* Listening Circle */}
-      <div className="mt-24 relative cursor-pointer select-none" onClick={toggleListening}>
-        <div
-          className={`relative w-64 h-64 rounded-full shadow-xl border-2 flex items-center justify-center transition-all duration-500
-          ${isListening ? "ring-8 ring-teal-300 animate-pulse" : "ring-4 ring-gray-300"}`}
-          style={{ background: circleColor }}
+      <div className="w-full max-w-4xl flex-1 flex flex-col items-center pt-6 md:pt-12 pb-8 px-4">
+        {/* Listening Circle */}
+        <div 
+          className="relative cursor-pointer select-none w-full max-w-md mx-auto"
+          onClick={toggleListening}
+          role="button"
+          aria-label={isListening ? "Stop listening" : "Start speaking"}
         >
-          <div className="flex items-center gap-3 h-48">
-            {volumes.map((value, i) => (
-              <div
-                key={i}
-                className="w-3 rounded-full bg-white transition-transform duration-150 ease-out"
-                style={{
-                  height: `${value * 120}px`,              // full height
-                  transform: `translateY(${60 - value * 60}px)`, // center
-                  background: lineColor,
-                }}
-              />
-            ))}
+          <div
+            className={`relative w-full aspect-square rounded-full shadow-xl border-2 flex items-center justify-center transition-all duration-500
+            ${isListening ? "ring-8 ring-teal-300 animate-pulse" : "ring-4 ring-gray-300"}
+            max-w-xs sm:max-w-sm mx-auto`}
+            style={{ background: circleColor }}
+          >
+            <div className="flex items-center justify-center gap-2 sm:gap-3 w-3/4 h-3/4">
+              {volumes.map((value, i) => (
+                <div
+                  key={i}
+                  className="w-2 sm:w-3 rounded-full bg-white transition-transform duration-150 ease-out flex-shrink-0"
+                  style={{
+                    height: `${value * 100}%`,
+                    maxHeight: '120px',
+                    transform: `translateY(${50 - value * 25}%)`,
+                    background: lineColor,
+                  }}
+                  aria-hidden="true"
+                />
+              ))}
+            </div>
           </div>
+
+          {/* Text */}
+          <p className="text-center mt-4 sm:mt-6 text-base sm:text-lg font-medium text-gray-700">
+            {isListening ? "Listening…" : "Tap to speak"}
+          </p>
         </div>
 
-        {/* Text */}
-        <p className="text-center mt-6 text-lg font-medium text-gray-700">
-          {isListening ? "Listening…" : "Tap to speak"}
-        </p>
+        {/* Spoken AI Sentence */}
+        {currentSentence && (
+          <div className="mt-4 sm:mt-6 p-4 bg-white/90 rounded-xl shadow-lg w-full max-w-2xl mx-auto text-center">
+            {currentSentence}
+          </div>
+        )}
+
+        {/* Input Form */}
+        <form
+          className="mt-12 flex items-center gap-3 w-full max-w-lg"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (input.trim()) {
+              sendMessage(input);
+              setInput("");
+            }
+          }}
+        >
+          <input
+            className="flex-1 p-3 rounded-xl shadow bg-white/70 border border-gray-300 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+            placeholder="Type your message…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            aria-label="Type your message"
+          />
+          <button 
+            type="submit"
+            className="px-5 py-3 bg-teal-600 text-white rounded-xl hover:bg-teal-700 shadow-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!input.trim()}
+          >
+            Send
+          </button>
+        </form>
       </div>
-
-      {/* Spoken AI Sentence */}
-      {currentSentence && (
-        <div className="mt-4 p-3 bg-white/90 rounded-xl shadow max-w-md text-center">
-          {currentSentence}
-        </div>
-      )}
-
-      {/* Input */}
-      <form
-        className="mt-12 flex items-center gap-3 w-full max-w-lg"
-        onSubmit={(e) => {
-          e.preventDefault();
-          sendMessage(input);
-          setInput("");
-        }}
-      >
-        <input
-          className="flex-1 p-3 rounded-xl shadow bg-white/70 border border-gray-300 backdrop-blur-sm"
-          placeholder="Type your message…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-        />
-        <button className="px-5 py-2 bg-teal-600 text-white rounded-xl hover:bg-teal-700 shadow">
-          Send
-        </button>
-      </form>
     </div>
   );
 };
