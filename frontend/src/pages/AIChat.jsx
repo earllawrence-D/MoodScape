@@ -77,36 +77,78 @@ const AIChat = () => {
   // -----------------------------
   const startEqualizerMic = async () => {
     try {
+      // Check for iOS/Safari
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+      if (isIOS) {
+        // For iOS, use a simple pulsing animation instead of microphone input
+        let direction = 1;
+        let value = 0.2;
+
+        const updateEqualizer = () => {
+          value += 0.02 * direction;
+          if (value > 0.8) direction = -1;
+          if (value < 0.2) direction = 1;
+
+          setVolumes(new Array(7).fill(0).map((_, i) =>
+            Math.max(0, value + (Math.random() * 0.2 - 0.1))
+          ));
+
+          animationFrameRef.current = requestAnimationFrame(updateEqualizer);
+        };
+
+        updateEqualizer();
+        return;
+      }
+
+      // For non-iOS devices, use the microphone input
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioRef.current = new AudioContext();
-      const source = audioRef.current.createMediaStreamSource(stream);
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 64;
 
-      analyserRef.current = audioRef.current.createAnalyser();
-      analyserRef.current.fftSize = 256;
+      analyserRef.current = analyser;
+      audioRef.current = audioContext;
+      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
 
-      dataArrayRef.current = new Uint8Array(analyserRef.current.frequencyBinCount);
-      source.connect(analyserRef.current);
+      const updateEqualizer = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArrayRef.current);
 
-      animateBars();
+        const barValues = [];
+        for (let i = 0; i < 7; i++) {
+          const slice = dataArrayRef.current.slice(i * 14, i * 14 + 14);
+          const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
+          barValues.push(Math.min(avg / 128 - 1, 1)); // center at 0
+        }
+
+        setVolumes((prev) => prev.map((v, i) => v + (barValues[i] - v) * 0.3));
+        animationFrameRef.current = requestAnimationFrame(updateEqualizer);
+      };
+
+      updateEqualizer();
     } catch (err) {
-      console.log("Mic analyzer error:", err);
+      console.error("Error accessing microphone:", err);
+      // Fallback to simple animation if microphone access fails
+      let direction = 1;
+      let value = 0.2;
+
+      const updateEqualizer = () => {
+        value += 0.02 * direction;
+        if (value > 0.8) direction = -1;
+        if (value < 0.2) direction = 1;
+
+        setVolumes(new Array(7).fill(0).map((_, i) =>
+          Math.max(0, value + (Math.random() * 0.2 - 0.1))
+        ));
+
+        animationFrameRef.current = requestAnimationFrame(updateEqualizer);
+      };
+
+      updateEqualizer();
     }
-  };
-
-  const animateBars = () => {
-    if (!isListening) return;
-    animationFrameRef.current = requestAnimationFrame(animateBars);
-
-    analyserRef.current.getByteFrequencyData(dataArrayRef.current);
-
-    const barValues = [];
-    for (let i = 0; i < 7; i++) {
-      const slice = dataArrayRef.current.slice(i * 14, i * 14 + 14);
-      const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
-      barValues.push(Math.min(avg / 128 - 1, 1)); // center at 0
-    }
-
-    setVolumes((prev) => prev.map((v, i) => v + (barValues[i] - v) * 0.3));
   };
 
   // -----------------------------
@@ -124,6 +166,10 @@ const AIChat = () => {
       return;
     }
 
+      // Check for mobile Safari
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    
     // Check for secure context on mobile
     const isSecure = window.isSecureContext || 
                     window.location.protocol === 'https:' || 
@@ -135,7 +181,9 @@ const AIChat = () => {
       return;
     }
 
+    // Use webkitSpeechRecognition for Safari/iOS
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
     if (!SpeechRecognition) {
       alert("Speech recognition is not supported in your browser.");
       return;
@@ -145,6 +193,12 @@ const AIChat = () => {
     recognizer.continuous = false;
     recognizer.interimResults = false;
     recognizer.lang = "en-US";
+    
+    // Additional configuration for iOS/Safari
+    if (isIOS || isSafari) {
+      recognizer.continuous = true; // Helps with iOS quirks
+      recognizer.interimResults = true; // Get interim results for better UX
+    }
 
     recognizer.onstart = () => {
       setIsListening(true);
