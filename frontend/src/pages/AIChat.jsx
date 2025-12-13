@@ -18,27 +18,87 @@ const AIChat = () => {
 
   const { speakText, stopSpeaking } = useVoice();
 
+  // Initialize audio context for mobile devices
+  const initAudioContext = () => {
+    try {
+      // Create new audio context if none exists or if closed
+      if (!audioRef.current || audioRef.current.state === 'closed') {
+        console.log('Initializing new audio context');
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioRef.current = new AudioContext();
+        console.log('Audio context created:', audioRef.current.state);
+      } 
+      // Resume if suspended (iOS requirement)
+      else if (audioRef.current.state === 'suspended') {
+        console.log('Resuming suspended audio context');
+        return audioRef.current.resume().then(() => {
+          console.log('Audio context resumed');
+          return true;
+        });
+      }
+      return Promise.resolve(true);
+    } catch (error) {
+      console.error('Error initializing audio context:', error);
+      return Promise.reject(error);
+    }
+  };
+
   // Speak text with TTS
   const speakResponse = async (text) => {
+    if (!text) return;
+    
+    console.log('Starting TTS for text:', text);
+    const clean = sanitizeForTTS(text);
+    
     try {
-      console.log('Starting TTS for text:', text);
-      const clean = sanitizeForTTS(text);
+      // Initialize audio context first
+      await initAudioContext();
       
-      // For iOS/Safari, we need to ensure audio context is created/resumed on user gesture
-      if (audioRef.current?.state === 'suspended') {
-        console.log('Audio context was suspended, resuming...');
-        await audioRef.current.resume();
+      // For mobile devices, we need to create a new Audio instance for each utterance
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        console.log('Mobile device detected, using mobile TTS strategy');
+        const utterance = new SpeechSynthesisUtterance(clean);
+        
+        // iOS requires these settings
+        utterance.volume = 1;
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        
+        return new Promise((resolve, reject) => {
+          utterance.onend = () => {
+            console.log('Mobile TTS completed');
+            resolve();
+          };
+          
+          utterance.onerror = (event) => {
+            console.error('Mobile TTS error:', event);
+            reject(event.error);
+          };
+          
+          window.speechSynthesis.speak(utterance);
+        });
+      } else {
+        // Use the custom TTS for desktop
+        console.log('Using custom TTS');
+        await speakText(clean);
       }
       
-      await speakText(clean);
       console.log('TTS completed successfully');
     } catch (error) {
       console.error('TTS Error:', error);
+      
       // Fallback to native speech synthesis if custom TTS fails
       if ('speechSynthesis' in window) {
-        console.log('Falling back to native speech synthesis');
-        const utterance = new SpeechSynthesisUtterance(text);
-        window.speechSynthesis.speak(utterance);
+        try {
+          console.log('Falling back to native speech synthesis');
+          const utterance = new SpeechSynthesisUtterance(clean);
+          return new Promise((resolve) => {
+            utterance.onend = resolve;
+            window.speechSynthesis.speak(utterance);
+          });
+        } catch (fallbackError) {
+          console.error('Native TTS fallback failed:', fallbackError);
+        }
       } else {
         console.error('Native speech synthesis not available');
       }
@@ -136,30 +196,54 @@ const AIChat = () => {
   const toggleListening = async () => {
     console.log('Toggle listening called, current state:', isListening);
     
+    // For mobile, we need to initialize audio on user gesture
+    const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobileDevice) {
+      try {
+        console.log('Mobile device detected, initializing audio context');
+        await initAudioContext();
+      } catch (error) {
+        console.error('Failed to initialize audio on mobile:', error);
+        alert('Could not initialize audio. Please ensure you have given microphone permissions.');
+        return;
+      }
+    }
+    
     if (isListening) {
       console.log('Stopping listening...');
       recognitionRef.current?.stop();
       stopSpeaking();
       setIsListening(false);
       setCurrentSentence("");
-      if (audioRef.current) {
+      
+      // Don't close audio context on mobile to avoid re-initialization issues
+      if (audioRef.current && !isMobileDevice) {
         console.log('Closing audio context');
-        await audioRef.current.close();
+        try {
+          await audioRef.current.close();
+        } catch (e) {
+          console.warn('Error closing audio context:', e);
+        }
         audioRef.current = null;
       }
+      
       cancelAnimationFrame(animationFrameRef.current);
       setVolumes(new Array(7).fill(0));
       return;
     }
 
-    // Check for secure context on mobile
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    // Check for browser support
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     const isSecure = window.isSecureContext || 
                     window.location.protocol === 'https:' || 
                     window.location.hostname === 'localhost' ||
                     window.location.hostname === '127.0.0.1';
     
-    console.log('Mobile:', isMobile, 'Secure Context:', isSecure, 'Protocol:', window.location.protocol);
+    console.log('Mobile:', isMobile, 
+                'Safari:', isSafari,
+                'Secure Context:', isSecure, 
+                'Protocol:', window.location.protocol,
+                'User Agent:', navigator.userAgent);
 
     if (isMobile && !isSecure) {
       const errorMsg = 'Voice input requires a secure context (HTTPS) on mobile devices. Please use the text input instead.';
