@@ -239,13 +239,13 @@ const AIChat = () => {
                     window.location.hostname === 'localhost' ||
                     window.location.hostname === '127.0.0.1';
     
-    console.log('Mobile:', isMobile, 
+    console.log('Mobile:', isMobileDevice, 
                 'Safari:', isSafari,
                 'Secure Context:', isSecure, 
                 'Protocol:', window.location.protocol,
                 'User Agent:', navigator.userAgent);
 
-    if (isMobile && !isSecure) {
+    if (isMobileDevice && !isSecure) {
       const errorMsg = 'Voice input requires a secure context (HTTPS) on mobile devices. Please use the text input instead.';
       console.warn(errorMsg);
       alert(errorMsg);
