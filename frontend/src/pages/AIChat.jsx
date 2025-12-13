@@ -24,6 +24,25 @@ const AIChat = () => {
 
   const { speakText, stopSpeaking, isSpeaking: isTtsSpeaking } = useVoice();
 
+  // Stop listening function
+  const stopListening = () => {
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (audioRef.current) {
+        audioRef.current.close();
+      }
+    } catch (error) {
+      console.error('Error stopping recognition:', error);
+    } finally {
+      setIsListening(false);
+    }
+  };
+
   // Check if device is mobile and TTS support
   useEffect(() => {
     const checkMobile = () => {
