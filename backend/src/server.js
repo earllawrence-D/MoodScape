@@ -32,6 +32,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust first proxy (for rate limiting behind reverse proxy like Nginx)
+app.set('trust proxy', 1);
+
 // Fix __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

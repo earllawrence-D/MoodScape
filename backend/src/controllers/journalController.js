@@ -24,48 +24,42 @@ export const getJournals = async (req, res) => {
 
     console.log(`📊 [getJournals] Fetching up to 100 journals for user ${req.user.id}`);
     
-    // Start a transaction
-    const transaction = await sequelize.transaction();
-    
+    // No transaction needed for read operations
     try {
-      // Get the count first
-      const count = await Journal.count({
-        where: { userId: req.user.id },
-        transaction
-      });
+      // Get pagination parameters
+      const limit = parseInt(req.query.limit) || 100;
+      const offset = parseInt(req.query.offset) || 0;
       
-      console.log(`📊 [getJournals] Found ${count} journals for user ${req.user.id}`);
+      // Get sort order (default: newest first)
+      const sortOrder = req.query.sort === 'oldest' ? 'ASC' : 'DESC';
       
-      // Then get the actual data with proper field mappings
+      console.log(`📊 [getJournals] Fetching up to ${limit} journals for user ${req.user.id}`);
+      
       const entries = await Journal.findAll({
         where: { userId: req.user.id },
-        order: [['created_at', 'DESC']],
-        limit: 100,
-        transaction
+        limit: limit,
+        offset: offset,
+        order: [['created_at', sortOrder]],
+        raw: true
       });
       
-      // Commit the transaction
-      await transaction.commit();
+      console.log(`📊 [getJournals] Found ${entries.length} journals for user ${req.user.id}`);
       
-      console.log(`✅ [getJournals] Successfully retrieved ${entries.length} journals`);
-      
-      // Map the entries to ensure consistent field names
+      // Format the response
       const formattedEntries = entries.map(entry => ({
         id: entry.id,
-        userId: entry.userId,
         content: entry.content,
-        isVoice: entry.isVoice,
+        isVoice: entry.is_voice,
         mood: entry.mood,
-        moodScore: entry.moodScore,
-        aiReport: entry.aiReport,
-        aiResponse: entry.aiResponse,
-        assignedTherapistId: entry.assignedTherapistId,
-        containsHarmful: entry.containsHarmful,
-        harmfulWords: Array.isArray(entry.harmfulWords) ? entry.harmfulWords : [],
-        isCrisis: entry.isCrisis,
-        createdAt: entry.createdAt,
-        updatedAt: entry.updatedAt
+        moodScore: entry.mood_score,
+        aiResponse: entry.ai_response,
+        containsHarmful: entry.contains_harmful,
+        harmfulWords: entry.harmful_words ? JSON.parse(entry.harmful_words) : [],
+        createdAt: entry.created_at,
+        updatedAt: entry.updated_at
       }));
+      
+      console.log(`✅ [getJournals] Successfully retrieved ${formattedEntries.length} journals`);
       
       res.status(200).json({
         success: true,
@@ -74,13 +68,10 @@ export const getJournals = async (req, res) => {
       });
       
     } catch (dbError) {
-      // Rollback the transaction if there's an error
-      await transaction.rollback();
       console.error('❌ [getJournals] Database error:', dbError);
       throw dbError;
     }
   } catch (err) {
-    await transaction.rollback();
     console.error('❌ [getJournals] Error:', {
       message: err.message,
       stack: err.stack,
