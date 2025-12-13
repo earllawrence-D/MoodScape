@@ -111,9 +111,20 @@ const AIChat = () => {
   // -----------------------------
   // Send message (text or voice)
   // -----------------------------
+  // Animation state ref to track if we should keep animating
+  const isAnimatingRef = useRef(true);
+  
+  // Cleanup function to stop animation
+  const stopAnimation = () => {
+    isAnimatingRef.current = false;
+    setVolumes(new Array(7).fill(0));
+    setCurrentSentence("");
+  };
+
   const sendMessage = async (message) => {
     if (!message.trim()) return; // text input works even if not listening
     stopSpeaking();
+    isAnimatingRef.current = true; // Reset animation state for new message
 
     try {
       const res = await aiAPI.chat({
@@ -135,19 +146,9 @@ const AIChat = () => {
         }, [])
         .filter(Boolean);
 
-      // Animation state ref to track if we should keep animating
-      const isAnimating = useRef(true);
-      
-      // Cleanup function to stop animation
-      const stopAnimation = () => {
-        isAnimating.current = false;
-        setVolumes(new Array(7).fill(0));
-        setCurrentSentence("");
-      };
-
       // Animation frame for smooth visualization
       const animate = () => {
-        if (!isAnimating.current) return;
+        if (!isAnimatingRef.current) return;
         
         setVolumes(prevVolumes => {
           // Create a smooth wave-like animation
@@ -166,7 +167,7 @@ const AIChat = () => {
 
       try {
         for (const line of lines) {
-          if (!isAnimating.current) break; // Stop if animation was cancelled
+          if (!isAnimatingRef.current) break; // Stop if animation was cancelled
           
           setCurrentSentence(line);
           await speakResponse(line).catch(error => {
