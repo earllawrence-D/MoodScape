@@ -140,8 +140,8 @@ Be empathetic and understanding. If the user is sharing something difficult, ack
         // If it's not valid JSON, treat the entire response as the AI message
         console.log('AI returned non-JSON response, using as message');
         return {
-          mood: this.analyzeMoodFromText(raw) || 'neutral',
-          moodScore: this.analyzeMoodScoreFromText(raw) || 5,
+          mood: analyzeMoodFromText(raw) || 'neutral',
+          moodScore: analyzeMoodScoreFromText(raw) || 5,
           aiResponse: raw,
           aiReport: raw
         };
@@ -153,8 +153,8 @@ Be empathetic and understanding. If the user is sharing something difficult, ack
       // If we have a raw response but couldn't parse it, use it as the message
       if (raw && typeof raw === 'string') {
         return {
-          mood: this.analyzeMoodFromText(raw) || 'neutral',
-          moodScore: this.analyzeMoodScoreFromText(raw) || 5,
+          mood: analyzeMoodFromText(raw) || 'neutral',
+          moodScore: analyzeMoodScoreFromText(raw) || 5,
           aiResponse: raw,
           aiReport: raw
         };
