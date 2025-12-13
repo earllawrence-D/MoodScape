@@ -138,24 +138,62 @@ export const createJournal = async (req, res) => {
     let aiAnalysis = {
       mood: 'neutral',
       moodScore: 5,
-      aiResponse: 'Keep journaling to track your emotions!',
-      aiReport: 'Keep journaling to track your emotions!'
+      aiResponse: 'Thank you for sharing. I\'m here to listen.',
+      aiReport: 'Default response - AI analysis not available'
     };
 
     try {
-      const aiResponse = await generateAIResponse(content);
-      if (aiResponse) {
+      // Get AI response with proper error handling
+      const aiResponse = await generateAIResponse(content, containsHarmful);
+      
+      // Handle different response formats
+      if (aiResponse && typeof aiResponse === 'object') {
         aiAnalysis = {
-          mood: aiResponse.mood || 'neutral',
-          moodScore: aiResponse.moodScore || 5,
-          aiResponse: aiResponse.aiResponse || 'Keep journaling to track your emotions!',
-          aiReport: aiResponse.aiReport || 'Keep journaling to track your emotions!'
+          mood: (aiResponse.mood || 'neutral').toLowerCase(),
+          moodScore: Math.max(1, Math.min(10, parseInt(aiResponse.moodScore) || 5)),
+          aiResponse: aiResponse.aiResponse || aiResponse.message || 'Thank you for sharing. I\'m here to listen.',
+          aiReport: aiResponse.aiReport || 'AI analysis completed'
+        };
+      } else if (typeof aiResponse === 'string') {
+        // Handle plain text responses
+        aiAnalysis = {
+          mood: 'neutral',
+          moodScore: 5,
+          aiResponse: aiResponse,
+          aiReport: 'AI returned plain text response'
         };
       }
-      console.log('✅ [createJournal] AI analysis successful');
+      
+      console.log('✅ [createJournal] AI analysis successful', {
+        mood: aiAnalysis.mood,
+        score: aiAnalysis.moodScore,
+        responseLength: aiAnalysis.aiResponse?.length || 0
+      });
+      
     } catch (aiError) {
-      console.error('⚠️ [createJournal] AI analysis failed:', aiError);
-      // Continue with default values if AI fails
+      console.error('⚠️ [createJournal] AI analysis failed:', {
+        error: aiError.message,
+        stack: aiError.stack,
+        contentPreview: content?.substring(0, 50) + '...'
+      });
+      
+      // Fallback to basic sentiment analysis
+      const lowerContent = content?.toLowerCase() || '';
+      if (/(sad|depressed|unhappy|hurt|die|suicid)/.test(lowerContent)) {
+        aiAnalysis = {
+          mood: 'sad',
+          moodScore: 2,
+          aiResponse: 'I\'m really sorry you\'re feeling this way. Your feelings are valid, and I\'m here to listen.',
+          aiReport: 'Fallback: Detected sad content'
+        };
+      } else if (/(happy|joy|excited|great|amazing)/.test(lowerContent)) {
+        aiAnalysis = {
+          mood: 'happy',
+          moodScore: 8,
+          aiResponse: 'I\'m glad to hear you\'re feeling positive!',
+          aiReport: 'Fallback: Detected positive content'
+        };
+      }
     }
 
     console.log('💾 [createJournal] Saving journal to database');
