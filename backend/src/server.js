@@ -1,3 +1,6 @@
+if (process.env.NODE_ENV !== "production") {
+  import('dotenv').then(dotenv => dotenv.config());
+}
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -27,7 +30,6 @@ import "./models/CommunityComment.js";
 import "./models/CommunityVote.js";
 import "./models/Feedback.js";
 
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
