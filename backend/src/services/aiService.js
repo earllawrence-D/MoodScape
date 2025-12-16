@@ -1,5 +1,11 @@
 import Groq from "groq-sdk";
 
+console.log(
+  "GROQ_API_KEY loaded:",
+  process.env.GROQ_API_KEY ? "YES" : "NO",
+  process.env.GROQ_API_KEY?.length
+);
+
 const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const MOOD_LABELS = [
