@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useContext } from "react";
 import api, { journalAPI, harmfulWordAPI } from "../utils/api";
 import Navbar from "../components/Navbar";
-import { Send, X } from "lucide-react";
+import { Send, X, BarChart2, BookOpen } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -159,87 +159,134 @@ const MoodJournal = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#d5f8f0] flex flex-col items-center">
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 to-blue-50">
       <Navbar />
-
-      <div className="w-full max-w-3xl p-6 flex flex-col gap-6">
-        {/* Journal Input */}
-        <div className="bg-white rounded-xl p-6 border-2 border-teal-400 shadow-md flex flex-col">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            className="p-3 border rounded-lg mb-3 focus:outline-teal-400"
-            placeholder="Write your mood here..."
-            rows={4}
-            disabled={loading}
-          />
-          <div className="flex justify-between items-center">
-            <button
-              onClick={handleSubmit}
-              disabled={loading || !content.trim()}
-              className="bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center transition-colors"
-            >
-              <Send className="w-5 h-5 mr-2" /> Send
-            </button>
+      
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Journal Input Section */}
+          <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 mb-8">
+            <h1 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+              <BookOpen className="mr-2 text-teal-500" /> Mood Journal
+            </h1>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-400 focus:border-transparent transition-all duration-200 resize-none"
+              placeholder="How are you feeling today? Share your thoughts..."
+              rows={6}
+              disabled={loading}
+            />
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !content.trim()}
+                className={`flex items-center px-6 py-2.5 rounded-xl text-white font-medium transition-all ${
+                  loading || !content.trim()
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : 'bg-teal-500 hover:bg-teal-600 transform hover:-translate-y-0.5'
+                }`}
+              >
+                {loading ? 'Sending...' : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" /> Post Entry
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Journal Entries */}
-        <div className="bg-white rounded-xl p-4 border-2 border-teal-400 shadow-md flex flex-col">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="font-bold text-lg">Entries</h2>
-            <button
-              className="bg-teal-400 text-white px-3 py-1 rounded hover:bg-teal-500 transition-colors"
-              onClick={() => setShowGraph(true)}
-            >
-              Graph
-            </button>
-          </div>
+          {/* Journal Entries Section */}
+          <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold text-gray-800">Your Journal Entries</h2>
+              <button
+                onClick={() => setShowGraph(true)}
+                className="flex items-center text-teal-600 hover:text-teal-700 font-medium"
+              >
+                <BarChart2 className="w-5 h-5 mr-1" /> View Mood Graph
+              </button>
+            </div>
 
-          <div className="max-h-80 overflow-y-auto space-y-3">
-            {journalsRef.current.length === 0 ? (
-              <p className="text-gray-500">No entries yet.</p>
-            ) : (
-              journalsRef.current.map((e) => (
-                <div
-                  key={e.id}
-                  className="p-3 border rounded-lg shadow-sm bg-gray-50"
-                >
-                  <p className="text-gray-800">{e.content}</p>
-                  {e.aiResponse && (
-                    <p className="text-sm text-gray-500 mt-1">{e.aiResponse}</p>
-                  )}
-                  {e.harmfulWords.length > 0 && (
-                    <p className="text-xs text-red-500 mt-1">
-                      Harmful words detected: {e.harmfulWords.join(", ")}
-                    </p>
-                  )}
+            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+              {journalsRef.current.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  <p>No entries yet. Start by writing your first journal entry!</p>
                 </div>
-              ))
-            )}
+              ) : (
+                journalsRef.current.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className={`p-5 rounded-xl border ${
+                      entry.harmfulWords.length > 0
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-gray-50 border-gray-100'
+                    }`}
+                  >
+                    <p className="text-gray-800 whitespace-pre-line">{entry.content}</p>
+                    {entry.aiResponse && (
+                      <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <p className="text-sm text-blue-800">{entry.aiResponse}</p>
+                      </div>
+                    )}
+                    {entry.harmfulWords.length > 0 && (
+                      <div className="mt-2">
+                        <span className="inline-block bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full">
+                          Harmful content detected
+                        </span>
+                      </div>
+                    )}
+                    <div className="mt-3 text-xs text-gray-500">
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Mood Graph Modal */}
       {showGraph && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-3xl shadow-xl relative">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-2xl p-6 w-full max-w-4xl shadow-2xl relative">
+          <div className="absolute top-4 right-4">
             <button
-              className="absolute top-3 right-3 text-gray-700 hover:text-gray-900"
               onClick={() => setShowGraph(false)}
+              className="text-gray-500 hover:text-gray-700 transition-colors"
             >
               <X className="w-6 h-6" />
             </button>
-
-            <h2 className="font-bold text-xl mb-4">Mood Trend Graph</h2>
-            <div className="w-full h-96">
-              <Line
-                data={chartData}
-                options={{ maintainAspectRatio: false }}
-                redraw
-              />
-            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Mood Trend Analysis</h2>
+          <p className="text-gray-600 mb-6">Track your mood patterns over time</p>
+          <div className="h-96 w-full">
+            <Line
+              data={chartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: {
+                    position: 'top',
+                  },
+                  tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                  },
+                },
+                scales: {
+                  y: {
+                    min: 0,
+                    max: 10,
+                    ticks: {
+                      stepSize: 1
+                    }
+                  }
+                }
+              }}
+            />
           </div>
         </div>
       )}
