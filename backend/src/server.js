@@ -1,9 +1,8 @@
-if (process.env.NODE_ENV !== "production") {
-  import('dotenv').then(dotenv => dotenv.config());
-}
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import fs from "fs";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -130,6 +129,10 @@ app.use("/api/harmful-words", harmfulWordRoutes);
 // HEALTHCHECK & SPA FALLBACK
 // ===============================
 
+// ===============================
+// HEALTHCHECK
+// ===============================
+
 app.get("/health", (req, res) => {
   res.json({
     success: true,
@@ -138,10 +141,26 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Fallback to frontend for SPA routing
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"));
+// ===============================
+// SPA FALLBACK (SAFE)
+// ===============================
+
+const frontendIndex = path.join(__dirname, "../../frontend/dist/index.html");
+
+app.get("*", (req, res, next) => {
+  // 🚨 NEVER hijack API routes
+  if (req.path.startsWith("/api")) return next();
+
+  if (fs.existsSync(frontendIndex)) {
+    res.sendFile(frontendIndex);
+  } else {
+    res.status(404).json({
+      error: "Frontend not built in this deployment",
+    });
+  }
 });
+
+
 
 // ===============================
 // 404 HANDLER

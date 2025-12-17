@@ -15,8 +15,10 @@ if (!API_KEY) {
 const groq = API_KEY
   ? new Groq({
       apiKey: API_KEY,
+      fetch: global.fetch
     })
   : null;
+
 
 /**
  * generateAIResponse
@@ -88,13 +90,25 @@ export const generateAIResponse = async (messages = [], systemPrompt = "") => {
 
       return { success: true, reply: aiMessage, raw: response };
     } catch (err) {
-      lastErr = err;
-      // If the error contains response data, include it in logs for debugging
-      const respData = err?.response?.data ?? err?.message ?? err;
-      console.error(`❌ Groq AI Error (attempt ${attempt}):`, respData);
+  lastErr = err;
 
-      // Basic transient error heuristic: network issues or 5xx
-      const status = err?.response?.status;
+  // 🔥 FULL diagnostic log (Railway logs will show this)
+  console.error("Groq full error:", {
+    message: err?.message,
+    code: err?.code,
+    name: err?.name,
+    status: err?.response?.status,
+    data: err?.response?.data,
+    stack: err?.stack,
+  });
+
+  // Keep the short log too (optional but useful)
+  const respData = err?.response?.data ?? err?.message ?? err;
+  console.error(`❌ Groq AI Error (attempt ${attempt}):`, respData);
+
+  // Basic transient error heuristic: network issues or 5xx
+  const status = err?.response?.status;
+
       const isTransient = !status || (status >= 500 && status < 600);
 
       if (!isTransient) {
