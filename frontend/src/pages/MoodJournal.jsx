@@ -40,6 +40,7 @@ const MoodJournal = () => {
   const [journals, setJournals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const [error, setError] = useState("");
 
   const journalsRef = useRef([]);
 
@@ -67,29 +68,17 @@ const MoodJournal = () => {
   const handleSubmit = async () => {
     if (!content.trim()) return;
     setLoading(true);
-
-    // Temporary entry for instant UI feedback
-    const tempEntry = {
-      id: "temp-" + Date.now(),
-      content,
-      harmfulWords: [],
-      mood: "neutral",
-      moodScore: 5,
-      aiResponse: "Analyzing...",
-      createdAt: new Date().toISOString(),
-    };
-
-    journalsRef.current = [tempEntry, ...journalsRef.current];
-    setJournals([...journalsRef.current]);
+    setError("");
 
     try {
-      // Detect harmful words
+      // First check for harmful words
       let harmfulWords = [];
       try {
         const hw = await harmfulWordAPI.check({ content });
         harmfulWords = hw.data?.words || [];
 
         if (harmfulWords.length > 0) {
+          // Log harmful words
           await Promise.all(
             harmfulWords.map((word) =>
               journalAPI.logHarmfulWord({
@@ -99,10 +88,29 @@ const MoodJournal = () => {
               })
             )
           );
+          
+          // Show error message and stop further processing
+          setError("Please avoid using harmful language. We're here to help you feel better.");
+          setLoading(false);
+          return;
         }
       } catch (e) {
         console.warn("Harmful detection failed:", e);
       }
+
+      // Create temporary entry for instant UI feedback
+      const tempEntry = {
+        id: "temp-" + Date.now(),
+        content,
+        harmfulWords: [],
+        mood: "neutral",
+        moodScore: 5,
+        aiResponse: "Analyzing your mood...",
+        createdAt: new Date().toISOString(),
+      };
+
+      journalsRef.current = [tempEntry, ...journalsRef.current];
+      setJournals([...journalsRef.current]);
 
       // Analyze mood
       let moodResult = { moodLabel: "neutral", score: 5, summary: "" };
@@ -110,6 +118,7 @@ const MoodJournal = () => {
         moodResult = await analyzeMood(content);
       } catch (e) {
         console.warn("Mood analysis failed:", e);
+        moodResult.summary = "I noticed you're sharing something important. I'm here to listen and support you.";
       }
 
       // Save journal entry
@@ -124,36 +133,56 @@ const MoodJournal = () => {
       const saved = saveRes.data?.data || {};
       if (!Array.isArray(saved.harmfulWords)) saved.harmfulWords = [];
 
-      journalsRef.current = [
-        saved,
-        ...journalsRef.current.filter((j) => j.id !== tempEntry.id),
-      ];
-
-      setJournals([...journalsRef.current]);
+      // Update the entry with saved data
+      const updatedJournals = journalsRef.current.map(j => 
+        j.id === tempEntry.id ? { ...saved, id: tempEntry.id } : j
+      );
+      
+      journalsRef.current = updatedJournals;
+      setJournals(updatedJournals);
       setContent("");
     } catch (err) {
       console.error("Save Journal Error:", err);
-      alert("Error saving journal entry.");
+      setError("An error occurred while saving your entry. Please try again.");
     }
 
     setLoading(false);
   };
 
-  // Chart data
+  // Chart data with proper date handling
   const chartData = {
-    labels: journalsRef.current.map((j) =>
-      new Date(j.createdAt).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    ),
+    labels: journalsRef.current.map((j) => {
+      try {
+        const date = new Date(j.createdAt);
+        if (isNaN(date.getTime())) return 'Invalid date';
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (e) {
+        console.warn('Invalid date format:', j.createdAt, e);
+        return 'Invalid date';
+      }
+    }),
     datasets: [
       {
         label: "Mood Score",
-        data: journalsRef.current.map((j) => j.moodScore ?? 5),
+        data: journalsRef.current.map((j) => {
+          const score = parseFloat(j.moodScore);
+          return isNaN(score) ? 5 : score;
+        }),
         borderColor: "#4f46e5",
         backgroundColor: "rgba(79,70,229,0.3)",
         tension: 0.4,
+        pointBackgroundColor: "#4f46e5",
+        pointBorderColor: "#fff",
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: "#4f46e5",
+        pointHoverBorderColor: "#fff",
+        pointHitRadius: 10,
+        pointBorderWidth: 2,
       },
     ],
   };
@@ -173,14 +202,22 @@ const MoodJournal = () => {
             rows={4}
             disabled={loading}
           />
-          <div className="flex justify-between items-center">
-            <button
-              onClick={handleSubmit}
-              disabled={loading || !content.trim()}
-              className="bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center transition-colors"
-            >
-              <Send className="w-5 h-5 mr-2" /> Send
-            </button>
+          <div className="flex flex-col gap-2">
+            {error && (
+              <div className="text-red-500 text-sm bg-red-50 p-2 rounded-md">
+                {error}
+              </div>
+            )}
+            <div className="flex justify-between items-center">
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !content.trim()}
+                className="bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Send className="w-5 h-5 mr-2" /> 
+                {loading ? 'Processing...' : 'Send'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -236,7 +273,38 @@ const MoodJournal = () => {
             <div className="w-full h-96">
               <Line
                 data={chartData}
-                options={{ maintainAspectRatio: false }}
+                options={{
+                  maintainAspectRatio: false,
+                  scales: {
+                    x: {
+                      ticks: {
+                        maxRotation: 45,
+                        minRotation: 45
+                      }
+                    },
+                    y: {
+                      min: 0,
+                      max: 10,
+                      ticks: {
+                        stepSize: 1
+                      }
+                    }
+                  },
+                  plugins: {
+                    tooltip: {
+                      callbacks: {
+                        label: function(context) {
+                          const label = context.dataset.label || '';
+                          if (context.parsed.y !== null) {
+                            const entry = journalsRef.current[context.dataIndex];
+                            return `${label}: ${context.parsed.y} - ${entry.content.substring(0, 30)}${entry.content.length > 30 ? '...' : ''}`;
+                          }
+                          return label;
+                        }
+                      }
+                    }
+                  }
+                }}
                 redraw
               />
             </div>
