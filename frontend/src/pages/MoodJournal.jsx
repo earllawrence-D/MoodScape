@@ -188,125 +188,168 @@ const MoodJournal = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#d5f8f0] flex flex-col items-center">
+    <div className="min-h-screen bg-[#f8fafc] flex flex-col">
       <Navbar />
-
-      <div className="w-full max-w-3xl p-6 flex flex-col gap-6">
-        {/* Journal Input */}
-        <div className="bg-white rounded-xl p-6 border-2 border-teal-400 shadow-md flex flex-col">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            className="p-3 border rounded-lg mb-3 focus:outline-teal-400"
-            placeholder="Write your mood here..."
-            rows={4}
-            disabled={loading}
-          />
-          <div className="flex flex-col gap-2">
+      <div className="flex-1 pt-20 px-4 pb-8 w-full max-w-4xl mx-auto">
+        <div className="space-y-6">
+          {/* Journal Input */}
+          <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">How are you feeling today?</h2>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full p-4 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all duration-200 resize-none"
+              placeholder="Write about your day, thoughts, or feelings..."
+              rows={4}
+              disabled={loading}
+            />
+            
             {error && (
-              <div className="text-red-500 text-sm bg-red-50 p-2 rounded-md">
+              <div className="mb-4 p-3 text-sm text-red-600 bg-red-50 rounded-lg">
                 {error}
               </div>
             )}
-            <div className="flex justify-between items-center">
+            <div className="flex justify-end">
               <button
                 onClick={handleSubmit}
                 disabled={loading || !content.trim()}
-                className="bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-teal-600 text-white py-2.5 px-6 rounded-lg hover:bg-teal-700 flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Send className="w-5 h-5 mr-2" /> 
-                {loading ? 'Processing...' : 'Send'}
+                {loading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" /> 
+                    Share Your Thoughts
+                  </>
+                )}
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Journal Entries */}
-        <div className="bg-white rounded-xl p-4 border-2 border-teal-400 shadow-md flex flex-col">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="font-bold text-lg">Entries</h2>
-            <button
-              className="bg-teal-400 text-white px-3 py-1 rounded hover:bg-teal-500 transition-colors"
-              onClick={() => setShowGraph(true)}
-            >
-              Graph
-            </button>
-          </div>
-
-          <div className="max-h-80 overflow-y-auto space-y-3">
-            {journalsRef.current.length === 0 ? (
-              <p className="text-gray-500">No entries yet.</p>
-            ) : (
-              journalsRef.current.map((e) => (
-                <div
-                  key={e.id}
-                  className="p-3 border rounded-lg shadow-sm bg-gray-50"
-                >
-                  <p className="text-gray-800">{e.content}</p>
-                  {e.aiResponse && (
-                    <p className="text-sm text-gray-500 mt-1">{e.aiResponse}</p>
-                  )}
-                  {e.harmfulWords.length > 0 && (
-                    <p className="text-xs text-red-500 mt-1">
-                      Harmful words detected: {e.harmfulWords.join(", ")}
-                    </p>
-                  )}
+          {/* Journal Entries */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-800">Your Journal Entries</h2>
+                {journalsRef.current.length > 0 && (
+                  <button
+                    onClick={() => setShowGraph(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-teal-700 bg-teal-100 hover:bg-teal-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
+                      <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
+                    </svg>
+                    View Mood Graph
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {journalsRef.current.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <p>No entries yet. Start by writing about your day!</p>
                 </div>
-              ))
-            )}
+              ) : (
+                journalsRef.current.map((entry) => (
+                  <div key={entry.id} className="p-6 hover:bg-gray-50 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <p className="text-gray-800 whitespace-pre-line">{entry.content}</p>
+                        {entry.aiResponse && (
+                          <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                            <p className="text-sm text-blue-700">{entry.aiResponse}</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="ml-4 flex-shrink-0">
+                        <div className={`h-3 w-3 rounded-full ${
+                          entry.moodScore >= 7 ? 'bg-green-500' : 
+                          entry.moodScore >= 4 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`} title={`Mood: ${entry.moodScore}/10`}></div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center text-xs text-gray-400">
+                      <span>
+                        {new Date(entry.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
-
       {/* Mood Graph Modal */}
       {showGraph && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-3xl shadow-xl relative">
-            <button
-              className="absolute top-3 right-3 text-gray-700 hover:text-gray-900"
-              onClick={() => setShowGraph(false)}
-            >
-              <X className="w-6 h-6" />
-            </button>
-
-            <h2 className="font-bold text-xl mb-4">Mood Trend Graph</h2>
-            <div className="w-full h-96">
-              <Line
-                data={chartData}
-                options={{
-                  maintainAspectRatio: false,
-                  scales: {
-                    x: {
-                      ticks: {
-                        maxRotation: 45,
-                        minRotation: 45
+          <div className="bg-white rounded-xl p-6 w-full max-w-4xl shadow-xl relative max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Mood Trend</h2>
+              <button
+                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100"
+                onClick={() => setShowGraph(false)}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0">
+              <div className="h-full">
+                <Line
+                  data={chartData}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                      x: {
+                        grid: {
+                          display: false
+                        },
+                        ticks: {
+                          maxRotation: 45,
+                          minRotation: 45,
+                          font: {
+                            size: 11
+                          }
+                        }
+                      },
+                      y: {
+                        min: 0,
+                        max: 10,
+                        ticks: {
+                          stepSize: 1
+                        },
+                        grid: {
+                          color: 'rgba(0, 0, 0, 0.05)'
+                        }
                       }
                     },
-                    y: {
-                      min: 0,
-                      max: 10,
-                      ticks: {
-                        stepSize: 1
-                      }
-                    }
-                  },
-                  plugins: {
-                    tooltip: {
-                      callbacks: {
-                        label: function(context) {
-                          const label = context.dataset.label || '';
-                          if (context.parsed.y !== null) {
+                    plugins: {
+                      legend: {
+                        display: false
+                      },
+                      tooltip: {
+                        callbacks: {
+                          label: function(context) {
                             const entry = journalsRef.current[context.dataIndex];
-                            return `${label}: ${context.parsed.y} - ${entry.content.substring(0, 30)}${entry.content.length > 30 ? '...' : ''}`;
+                            return [
+                              `Mood: ${context.parsed.y}/10`,
+                              `Entry: ${entry.content.substring(0, 30)}${entry.content.length > 30 ? '...' : ''}`
+                            ];
                           }
-                          return label;
                         }
                       }
                     }
-                  }
-                }}
-                redraw
-              />
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -314,5 +357,4 @@ const MoodJournal = () => {
     </div>
   );
 };
-
 export default MoodJournal;
