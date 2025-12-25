@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useContext } from "react";
-import api, { journalAPI, harmfulWordAPI } from "../utils/api";
+import { journalAPI, harmfulWordAPI } from "../utils/api";
 import Navbar from "../components/Navbar";
 import { Send, X } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { AuthContext } from "../context/AuthContext";
+import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 // Chart.js registration
@@ -187,12 +188,13 @@ const MoodJournal = () => {
     ],
   };
 
+  const filtered = journalsRef.current.filter(j => j.id !== "temp-" + Date.now());
+
   return (
     <div className="min-h-screen bg-[#d5f8f0] flex flex-col items-center">
       <Navbar />
 
       <div className="w-full max-w-3xl p-6 flex flex-col gap-6">
-        {/* Journal Input */}
         <div className="bg-white rounded-xl p-6 border-2 border-teal-400 shadow-md flex flex-col">
           <textarea
             value={content}
@@ -202,26 +204,19 @@ const MoodJournal = () => {
             rows={4}
             disabled={loading}
           />
-          <div className="flex flex-col gap-2">
-            {error && (
-              <div className="text-red-500 text-sm bg-red-50 p-2 rounded-md">
-                {error}
-              </div>
-            )}
-            <div className="flex justify-between items-center">
-              <button
-                onClick={handleSubmit}
-                disabled={loading || !content.trim()}
-                className="bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Send className="w-5 h-5 mr-2" /> 
-                {loading ? 'Processing...' : 'Send'}
-              </button>
-            </div>
+
+          <div className="flex justify-between items-center">
+            <button
+              onClick={handleSubmit}
+              disabled={loading || !content.trim()}
+              className="bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send className="w-5 h-5 mr-2" /> 
+              {loading ? 'Processing...' : 'Send'}
+            </button>
           </div>
         </div>
 
-        {/* Journal Entries */}
         <div className="bg-white rounded-xl p-4 border-2 border-teal-400 shadow-md flex flex-col">
           <div className="flex justify-between items-center mb-3">
             <h2 className="font-bold text-lg">Entries</h2>
@@ -234,23 +229,23 @@ const MoodJournal = () => {
           </div>
 
           <div className="max-h-80 overflow-y-auto space-y-3">
-            {journalsRef.current.length === 0 ? (
+            {filtered.length === 0 ? (
               <p className="text-gray-500">No entries yet.</p>
             ) : (
-              journalsRef.current.map((e) => (
-                <div
-                  key={e.id}
-                  className="p-3 border rounded-lg shadow-sm bg-gray-50"
-                >
+              filtered.map((e) => (
+                <div key={e.id} className="p-3 border rounded-lg shadow-sm bg-gray-50">
                   <p className="text-gray-800">{e.content}</p>
                   {e.aiResponse && (
                     <p className="text-sm text-gray-500 mt-1">{e.aiResponse}</p>
                   )}
-                  {e.harmfulWords.length > 0 && (
+                  {e.harmfulWords && e.harmfulWords.length > 0 && (
                     <p className="text-xs text-red-500 mt-1">
                       Harmful words detected: {e.harmfulWords.join(", ")}
                     </p>
                   )}
+                  <div className="text-xs text-gray-400 mt-1">
+                    {new Date(e.createdAt).toLocaleString()}
+                  </div>
                 </div>
               ))
             )}
@@ -258,7 +253,6 @@ const MoodJournal = () => {
         </div>
       </div>
 
-      {/* Mood Graph Modal */}
       {showGraph && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-3xl shadow-xl relative">
@@ -270,9 +264,10 @@ const MoodJournal = () => {
             </button>
 
             <h2 className="font-bold text-xl mb-4">Mood Trend Graph</h2>
+
             <div className="w-full h-96">
-              <Line
-                data={chartData}
+              <Line 
+                data={chartData} 
                 options={{
                   maintainAspectRatio: false,
                   scales: {
